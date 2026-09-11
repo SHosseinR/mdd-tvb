@@ -1,0 +1,42 @@
+[paths]
+count_matrix = "D:/university/projects/PyTepFit/data/Schaefer2018_200Parcels_7Networks_count.csv"
+distance_matrix = "D:/university/projects/PyTepFit/data/Schaefer2018_200Parcels_7Networks_distance.csv"
+centroids = "data/atlas/Schaefer2018_200Parcels_7Networks_centroids.csv"
+output_dir = "outputs/baseline"
+
+[connectivity]
+expected_regions = 200
+weight_transform = "log1p"
+normalization = "region_sum"
+speed_mm_per_ms = 4.0
+symmetry_tolerance = 1e-10
+
+[model]
+A = 3.25
+B = 22.0
+a = 0.1
+b = 0.05
+J = 135.0
+mu = 0.22
+
+[coupling]
+global_gain = 15.0
+
+[simulation]
+duration_ms = 5000.0
+transient_ms = 1000.0
+dt_ms = 0.1
+monitor_period_ms = 2.0
+noise_nsig = 1e-6
+seed = 42
+
+[monitor]
+reference = "average"
+surface_laplacian = true
+montage = "colin27_1005"
+channels = [
+  "Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8",
+  "FC3", "FCz", "FC4", "T7", "C3", "Cz", "C4", "T8",
+  "CP3", "CPz", "CP4", "P7", "P3", "Pz", "P4", "P8",
+  "O1", "Oz", "O2",
+]
