@@ -28,3 +28,6 @@ def test_short_tvb_simulation_and_eeg_monitor() -> None:
     assert np.max(np.abs(result.eeg.mean(axis=1))) < 1e-9
     assert result.metadata["observation_noise"] == "disabled"
     assert result.metadata["noise_target_state"] == "y4_only"
+    assert result.metadata["analytic_gain_regularization"]["regularized_source_sensor_pairs"] == 2
+    assert result.regional_parameters.mu.shape == (200,)
+    assert np.ptp(result.regional_parameters.mu) > 0

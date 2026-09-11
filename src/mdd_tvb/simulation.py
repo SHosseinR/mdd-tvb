@@ -10,7 +10,12 @@ from tvb.simulator import coupling, integrators, models, monitors, noise, simula
 
 from .config import RunConfig
 from .connectome import ConnectomeBundle
-from .eeg import apply_surface_laplacian, build_eeg_monitor
+from .eeg import (
+    apply_surface_laplacian,
+    build_eeg_monitor,
+    regularize_analytic_eeg_gain,
+)
+from .heterogeneity import RegionalParameters, build_regional_parameters
 
 
 @dataclass(frozen=True)
@@ -22,6 +27,7 @@ class SimulationResult:
     gain_matrix: np.ndarray
     channel_names: tuple[str, ...]
     region_labels: np.ndarray
+    regional_parameters: RegionalParameters
     metadata: dict[str, Any]
 
 
@@ -35,13 +41,19 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
     sim_cfg = config.simulation
     np.random.seed(sim_cfg.seed)
 
+    regional = build_regional_parameters(
+        config.model,
+        sim_cfg.noise_nsig,
+        connectome.region_labels,
+        config.heterogeneity,
+    )
     model = models.JansenRit(
         A=_scalar(config.model.A),
         B=_scalar(config.model.B),
-        a=_scalar(config.model.a),
-        b=_scalar(config.model.b),
+        a=regional.a,
+        b=regional.b,
         J=_scalar(config.model.J),
-        mu=_scalar(config.model.mu),
+        mu=regional.mu,
     )
     long_range_coupling = coupling.SigmoidalJansenRit(
         a=_scalar(config.coupling.global_gain)
@@ -49,9 +61,15 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
     # Apply stochastic forcing only to y4, the derivative state associated with
     # the excitatory input pathway. Adding equal noise directly to every JR
     # state would contaminate the PSP variables with broadband fluctuations.
-    neural_noise = np.zeros(len(model.state_variables), dtype=float)
-    neural_noise[4] = sim_cfg.noise_nsig
-    stochastic_noise = noise.Additive(nsig=neural_noise, noise_seed=sim_cfg.seed)
+    neural_noise = np.zeros(
+        (len(model.state_variables), config.connectivity.expected_regions), dtype=float
+    )
+    neural_noise[4] = regional.noise_nsig
+    stochastic_noise = noise.Additive(
+        nsig=neural_noise,
+        ntau=sim_cfg.noise_tau_ms,
+        noise_seed=sim_cfg.seed,
+    )
     integrator = integrators.HeunStochastic(
         dt=sim_cfg.dt_ms, noise=stochastic_noise
     )
@@ -90,6 +108,12 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
         initial_conditions=initial_history,
     )
     engine.configure()
+    gain_audit = regularize_analytic_eeg_gain(
+        eeg_monitor,
+        connectome.centres,
+        connectome.connectivity.orientations,
+        config.monitor.minimum_source_sensor_distance_mm,
+    )
     region_output, eeg_output = engine.run(simulation_length=sim_cfg.duration_ms)
     region_time, region_state = region_output
     eeg_time, eeg_state = eeg_output
@@ -124,6 +148,7 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
     metadata: dict[str, Any] = {
         "model": "TVB JansenRit",
         "observation": "TVB EEG analytic single-sphere",
+        "eeg_reprojected_from_saved_regional_psp": False,
         "observation_noise": "disabled",
         "regional_observable": "y1_minus_y2",
         "eeg_reference": config.monitor.reference,
@@ -135,6 +160,7 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
         "sample_frequency_hz": sfreq_hz,
         "seed": sim_cfg.seed,
         "noise_nsig": sim_cfg.noise_nsig,
+        "noise_tau_ms": sim_cfg.noise_tau_ms,
         "noise_target_state": "y4_only",
         "global_coupling": config.coupling.global_gain,
         "samples_after_transient": int(time_ms.size),
@@ -142,8 +168,16 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
         "region_psp_standard_deviation": float(region_psp.std()),
         "eeg_standard_deviation": float(eeg.std()),
         "gain_shape": list(eeg_monitor.gain.shape),
+        "analytic_gain_regularization": gain_audit,
         "initial_history": "quiescent_zero_history_covering_maximum_delay",
         "initial_history_steps": history_steps,
+        "heterogeneity_enabled": config.heterogeneity.enabled,
+        "regional_mu_range": [float(regional.mu.min()), float(regional.mu.max())],
+        "regional_a_range": [float(regional.a.min()), float(regional.a.max())],
+        "regional_b_range": [float(regional.b.min()), float(regional.b.max())],
+        "regional_noise_nsig_range": [
+            float(regional.noise_nsig.min()), float(regional.noise_nsig.max())
+        ],
     }
     return SimulationResult(
         time_ms=time_ms,
@@ -153,5 +187,6 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
         gain_matrix=eeg_monitor.gain.copy(),
         channel_names=config.monitor.channels,
         region_labels=connectome.region_labels,
+        regional_parameters=regional,
         metadata=metadata,
     )

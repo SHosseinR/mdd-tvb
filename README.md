@@ -4,7 +4,7 @@ This repository implements the pre-inference core of a planned whole-brain TMS
 model:
 
 1. audit and scale the existing Schaefer-200 structural connectome;
-2. run a delayed, stochastic TVB Jansen–Rit network;
+2. run a delayed, stochastic, spatially heterogeneous TVB Jansen–Rit network;
 3. monitor the pyramidal PSP at all 200 parcels;
 4. project it to the exact 26-channel TDBRAIN montage with TVB's analytic EEG
    monitor;
@@ -34,11 +34,19 @@ The present gain matrix is an explicitly documented template approximation:
 - sensors: the exact 26 TDBRAIN labels in MNE `colin27_1005` positions (the
   current name for the positions previously exposed as `standard_1005`);
 - volume conductor: TVB analytic single sphere;
+- near field: a declared 20 mm source–sensor distance floor prevents individual
+  coarse parcel centroids from creating an inverse-square singularity;
 - reference: average reference.
 
 It is suitable for simulator development and later feature-fitting experiments.
 It is not a subject-specific BEM/FEM forward solution and amplitudes are not
 calibrated to microvolts.
+
+The TDBRAIN channel *labels* and order are taken from the actual EEGLAB files.
+Those files contain NaN channel coordinates, so the lead field necessarily uses
+MNE's `colin27_1005` template locations for the matching names; they are not
+digitized subject electrode positions. The full construction is documented in
+`docs/EEG_FORWARD_MODEL.md`.
 
 ## Setup on this machine
 
@@ -71,16 +79,23 @@ support, graph connectedness, atlas ordering, delays, and sensor availability.
 & .\.conda\python.exe -m mdd_tvb run --config configs\baseline.toml
 ```
 
-The default run simulates 5 seconds, discards the first second, and samples the
-regional and EEG monitors at 500 Hz. Results are written to `outputs/baseline`:
+The default run simulates 30 seconds, discards the first 2 seconds, and samples
+the regional and EEG monitors at 500 Hz. Results are written to `outputs/baseline`:
 
 - `baseline_timeseries.npz`: time, 200 parcel PSPs, 26 sensor EEG, gain matrix,
   and optional surface-Laplacian EEG;
 - `scaled_connectome.npy` and `tract_lengths_mm.npy`;
 - `regions.csv` and `sensors.csv` defining exact ordering;
+- `regional_parameters.csv` with every seeded parameter/noise multiplier;
 - `eeg_psd.csv`;
 - `run_metadata.json` with parameters, audits, and limitations;
 - `baseline_summary.png` for visual QC.
+
+The NPZ stores the raw average-referenced model observation. Only the stacked
+EEG trace in the QC figure is zero-phase high-pass filtered at 1 Hz, because the
+Jansen–Rit equilibrium produces large channel-specific DC offsets. Multitaper
+spectra are computed after per-channel demeaning; neither operation alters the
+stored monitor signal.
 
 ## What must happen before fitting
 
@@ -92,8 +107,24 @@ parameter set and structured effective-coupling deviations—not 13,861 free
 edges.
 
 Neural noise is applied only to Jansen–Rit's `y4` derivative state, corresponding
-to the excitatory-input pathway. Observation noise is disabled; downstream work
-can add a separately calibrated sensor-noise model.
+to the excitatory-input pathway, and has a configurable temporal correlation.
+Small, seeded network- and parcel-level variations in mean drive, common E/I
+time scale, and drive variance prevent an unrealistically homogeneous periodic
+orbit. The visual network receives a small, explicit increase in drive and drive
+variance as an eyes-closed baseline prior. Every realized value is saved.
+Observation noise is disabled; downstream work can add a separately calibrated
+sensor-noise model.
+
+The 30-second duration follows a conservative convergence-oriented baseline for
+network/spectral summaries. The model remains a hypothesis generator: these
+heterogeneity priors must later be checked by synthetic recovery and fitted or
+rejected using held-out empirical EEG.
+
+The rationale and the non-fitting regime-selection record are documented in
+`docs/BASELINE_SELECTION.md`. The current inverse synaptic time constants
+(`a=0.13 ms^-1`, `b=0.065 ms^-1`) are within TVB's declared JR ranges but differ
+from the canonical 0.10/0.05 values; this is an explicit reference-regime choice,
+not a fitted physiological conclusion.
 
 The count and distance matrices contain no embedded region labels. This project
 uses the official Schaefer centroid ordering assumed by PyTepFit, but the
@@ -106,9 +137,16 @@ A small non-fitting regime scan is included for baseline quality control:
 & .\.conda\python.exe scripts\scan_reference_regimes.py
 ```
 
-It varies only the mean drive and global coupling, then reports regional and EEG
-spectral peaks and alpha-power fractions. This is a reference-regime diagnostic,
-not subject fitting or protocol optimization.
+It can vary mean drive, global coupling, time scale, noise, and the visual-noise
+prior, then reports spectral, spatial, and low-rank diagnostics. This is a
+reference-regime diagnostic, not subject fitting or protocol optimization.
+
+If only the observation model changes, the saved linear regional monitor can be
+reprojected without rerunning the neural dynamics:
+
+```powershell
+& .\.conda\python.exe scripts\reproject_saved_run.py
+```
 
 ## FEM status
 

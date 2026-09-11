@@ -14,26 +14,40 @@ symmetry_tolerance = 1e-10
 [model]
 A = 3.25
 B = 22.0
-a = 0.1
-b = 0.05
+a = 0.13
+b = 0.065
 J = 135.0
 mu = 0.22
 
 [coupling]
-global_gain = 15.0
+global_gain = 7.0
 
 [simulation]
-duration_ms = 5000.0
-transient_ms = 1000.0
-dt_ms = 0.1
+duration_ms = 30000.0
+transient_ms = 2000.0
+dt_ms = 0.25
 monitor_period_ms = 2.0
-noise_nsig = 1e-6
+noise_nsig = 1e-4
+noise_tau_ms = 5.0
 seed = 42
+
+[heterogeneity]
+enabled = true
+seed = 314159
+network_log_sd = 0.02
+regional_drive_log_sd = 0.06
+regional_time_scale_log_sd = 0.04
+regional_noise_log_sd = 0.20
+max_parameter_deviation = 0.15
+visual_drive_multiplier = 1.03
+visual_noise_multiplier = 1.40
 
 [monitor]
 reference = "average"
 surface_laplacian = true
 montage = "colin27_1005"
+minimum_source_sensor_distance_mm = 20.0
+visualization_highpass_hz = 1.0
 channels = [
   "Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8",
   "FC3", "FCz", "FC4", "T7", "C3", "Cz", "C4", "T8",

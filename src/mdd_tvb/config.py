@@ -28,8 +28,8 @@ class ConnectivityConfig:
 class ModelConfig:
     A: float = 3.25
     B: float = 22.0
-    a: float = 0.1
-    b: float = 0.05
+    a: float = 0.13
+    b: float = 0.065
     J: float = 135.0
     mu: float = 0.22
 
@@ -41,11 +41,12 @@ class CouplingConfig:
 
 @dataclass(frozen=True)
 class SimulationConfig:
-    duration_ms: float = 5000.0
-    transient_ms: float = 1000.0
-    dt_ms: float = 0.1
+    duration_ms: float = 30000.0
+    transient_ms: float = 2000.0
+    dt_ms: float = 0.25
     monitor_period_ms: float = 2.0
-    noise_nsig: float = 1e-6
+    noise_nsig: float = 1e-4
+    noise_tau_ms: float = 5.0
     seed: int = 42
 
 
@@ -55,6 +56,21 @@ class MonitorConfig:
     surface_laplacian: bool
     montage: str
     channels: tuple[str, ...]
+    minimum_source_sensor_distance_mm: float = 0.0
+    visualization_highpass_hz: float = 1.0
+
+
+@dataclass(frozen=True)
+class HeterogeneityConfig:
+    enabled: bool = True
+    seed: int = 314159
+    network_log_sd: float = 0.02
+    regional_drive_log_sd: float = 0.06
+    regional_time_scale_log_sd: float = 0.04
+    regional_noise_log_sd: float = 0.20
+    max_parameter_deviation: float = 0.15
+    visual_drive_multiplier: float = 1.03
+    visual_noise_multiplier: float = 1.40
 
 
 @dataclass(frozen=True)
@@ -66,6 +82,7 @@ class RunConfig:
     model: ModelConfig
     coupling: CouplingConfig
     simulation: SimulationConfig
+    heterogeneity: HeterogeneityConfig
     monitor: MonitorConfig
 
 
@@ -93,12 +110,19 @@ def load_config(path: str | Path) -> RunConfig:
     model = ModelConfig(**raw.get("model", {}))
     coupling = CouplingConfig(**raw.get("coupling", {}))
     simulation = SimulationConfig(**raw.get("simulation", {}))
+    heterogeneity = HeterogeneityConfig(**raw.get("heterogeneity", {}))
     monitor_raw = raw["monitor"]
     monitor = MonitorConfig(
         reference=str(monitor_raw.get("reference", "average")),
         surface_laplacian=bool(monitor_raw.get("surface_laplacian", False)),
         montage=str(monitor_raw.get("montage", "standard_1005")),
         channels=tuple(str(value) for value in monitor_raw["channels"]),
+        minimum_source_sensor_distance_mm=float(
+            monitor_raw.get("minimum_source_sensor_distance_mm", 0.0)
+        ),
+        visualization_highpass_hz=float(
+            monitor_raw.get("visualization_highpass_hz", 1.0)
+        ),
     )
 
     if simulation.duration_ms <= simulation.transient_ms:
@@ -114,8 +138,27 @@ def load_config(path: str | Path) -> RunConfig:
         raise ValueError("global_gain must be non-negative")
     if simulation.noise_nsig < 0:
         raise ValueError("noise_nsig must be non-negative")
+    if simulation.noise_tau_ms < 0:
+        raise ValueError("noise_tau_ms must be non-negative")
+    if not 0 <= heterogeneity.max_parameter_deviation < 1:
+        raise ValueError("max_parameter_deviation must be in [0, 1)")
+    for name in (
+        "network_log_sd",
+        "regional_drive_log_sd",
+        "regional_time_scale_log_sd",
+        "regional_noise_log_sd",
+    ):
+        if getattr(heterogeneity, name) < 0:
+            raise ValueError(f"{name} must be non-negative")
+    if heterogeneity.visual_drive_multiplier <= 0 or heterogeneity.visual_noise_multiplier <= 0:
+        raise ValueError("visual multipliers must be positive")
     if len(monitor.channels) != len(set(monitor.channels)):
         raise ValueError("monitor channel labels must be unique")
+    if monitor.minimum_source_sensor_distance_mm < 0:
+        raise ValueError("minimum_source_sensor_distance_mm must be non-negative")
+    nyquist_hz = 500.0 / simulation.monitor_period_ms
+    if not 0 < monitor.visualization_highpass_hz < nyquist_hz:
+        raise ValueError("visualization_highpass_hz must lie between 0 and Nyquist")
 
     return RunConfig(
         config_path=config_path,
@@ -125,6 +168,6 @@ def load_config(path: str | Path) -> RunConfig:
         model=model,
         coupling=coupling,
         simulation=simulation,
+        heterogeneity=heterogeneity,
         monitor=monitor,
     )
-
