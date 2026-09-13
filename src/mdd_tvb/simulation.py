@@ -142,12 +142,13 @@ def run_baseline(config: RunConfig, connectome: ConnectomeBundle) -> SimulationR
     eeg_csd = None
     if config.monitor.surface_laplacian:
         eeg_csd = apply_surface_laplacian(
-            eeg, config.monitor.channels, sfreq_hz, config.monitor.montage
+            eeg, config.monitor.channels, sfreq_hz, config.monitor
         )
 
     metadata: dict[str, Any] = {
         "model": "TVB JansenRit",
         "observation": "TVB EEG analytic single-sphere",
+        "sensor_coordinate_source": str(config.monitor.coordinate_file),
         "eeg_reprojected_from_saved_regional_psp": False,
         "observation_noise": "disabled",
         "regional_observable": "y1_minus_y2",

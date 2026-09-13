@@ -17,8 +17,9 @@ import pandas as pd
 from mne.time_frequency import psd_array_multitaper
 from scipy.signal import butter, sosfiltfilt
 
-from .config import RunConfig
+from .config import MonitorConfig, RunConfig
 from .connectome import ConnectomeBundle
+from .eeg import mne_sensor_montage, sensor_coordinate_audit
 from .simulation import SimulationResult
 
 
@@ -143,6 +144,7 @@ def _plot_summary(
     connectome: ConnectomeBundle,
     frequencies: np.ndarray,
     psd: np.ndarray,
+    monitor_settings: MonitorConfig,
     visualization_highpass_hz: float = 1.0,
 ) -> None:
     time_s = result.time_ms / 1000.0
@@ -193,7 +195,7 @@ def _plot_summary(
     alpha_power = np.trapezoid(psd[alpha_mask], frequencies[alpha_mask], axis=0)
     import mne
     info = mne.create_info(list(result.channel_names), sfreq=sfreq_hz, ch_types="eeg")
-    info.set_montage(mne.channels.make_standard_montage("colin27_1005"), on_missing="raise")
+    info.set_montage(mne_sensor_montage(monitor_settings), on_missing="raise")
     mne.viz.plot_topomap(
         alpha_power,
         info,
@@ -289,6 +291,7 @@ def save_run(config: RunConfig, connectome: ConnectomeBundle, result: Simulation
         },
         "config": _json_value(asdict(config)),
         "connectome_audit": connectome.audit,
+        "sensor_coordinate_audit": sensor_coordinate_audit(config.monitor),
         "simulation": result.metadata,
         "spectral_qc": spectral,
         "dynamics_qc": _dynamics_summary(result),
@@ -301,6 +304,7 @@ def save_run(config: RunConfig, connectome: ConnectomeBundle, result: Simulation
         "limitations": [
             "The structural connectome is common to all future subjects.",
             "The EEG gain matrix uses TVB's analytic single-sphere approximation.",
+            "Sensor coordinates are the TDBRAIN publication-level Table 3 positions, not per-subject digitization.",
             "Regional orientations are radial approximations derived from parcel centroids.",
             f"The centroid-based analytic gain uses a declared {config.monitor.minimum_source_sensor_distance_mm:g} mm near-field distance floor; it is not a substitute for a surface BEM/FEM lead field.",
             "Signal amplitude is in model/arbitrary units and is not calibrated to microvolts.",
@@ -317,6 +321,7 @@ def save_run(config: RunConfig, connectome: ConnectomeBundle, result: Simulation
         connectome,
         frequencies,
         psd,
+        config.monitor,
         config.monitor.visualization_highpass_hz,
     )
     return output_dir

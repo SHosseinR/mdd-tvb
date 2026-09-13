@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+analysis = ["scikit-learn>=1.5,<2"]
 
 [project.scripts]
 mdd-tvb = "mdd_tvb.cli:main"
@@ -30,4 +31,3 @@ where = ["src"]
 addopts = "-ra"
 pythonpath = ["src"]
 testpaths = ["tests"]
-

@@ -12,3 +12,5 @@ def test_baseline_config_contract() -> None:
     assert config.model.a == 0.13
     assert config.simulation.noise_tau_ms == 5.0
     assert config.monitor.channels[3] == "F3"
+    assert config.monitor.coordinate_file is not None
+    assert config.monitor.coordinate_file.name == "TDBRAIN_Table3_electrode_coordinates.csv"

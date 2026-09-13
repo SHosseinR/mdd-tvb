@@ -61,6 +61,7 @@ def main() -> None:
         connectome,
         frequencies,
         psd,
+        config.monitor,
         config.monitor.visualization_highpass_hz,
     )
     print(f"Saved {output_path.resolve()}")

@@ -185,3 +185,136 @@ def load_connectome(paths: PathsConfig, settings: ConnectivityConfig) -> Connect
         centres=centres,
         audit=audit,
     )
+
+
+def with_network_endpoint_gains(
+    bundle: ConnectomeBundle,
+    network_labels: np.ndarray,
+    gains_by_network: dict[str, float],
+) -> ConnectomeBundle:
+    """Apply symmetric endpoint gains without changing tract support or delays."""
+
+    labels = np.asarray(network_labels).astype(str)
+    if labels.shape != bundle.region_labels.shape:
+        raise ValueError("Network labels must match the connectome region count")
+    missing = sorted(set(labels).difference(gains_by_network))
+    if missing:
+        raise ValueError(f"Missing network endpoint gains: {missing}")
+    regional_gains = np.asarray([gains_by_network[name] for name in labels], dtype=float)
+    if not np.isfinite(regional_gains).all() or np.any(regional_gains <= 0):
+        raise ValueError("Network endpoint gains must be positive and finite")
+    edge_gain = np.sqrt(regional_gains[:, np.newaxis] * regional_gains[np.newaxis, :])
+    weights = bundle.weights * edge_gain
+    conn = Connectivity(
+        weights=weights,
+        tract_lengths=bundle.tract_lengths.copy(),
+        centres=bundle.centres.copy(),
+        region_labels=bundle.region_labels.copy(),
+        orientations=bundle.connectivity.orientations.copy(),
+        cortical=bundle.connectivity.cortical.copy(),
+        hemispheres=bundle.connectivity.hemispheres.copy(),
+        speed=bundle.connectivity.speed.copy(),
+    )
+    conn.configure()
+    audit = {
+        **bundle.audit,
+        "network_endpoint_gains": {
+            name: float(gains_by_network[name]) for name in sorted(gains_by_network)
+        },
+        "scaled_weight_max_after_network_gains": float(weights.max()),
+        "scaled_max_region_input_after_network_gains": float(
+            np.max(weights.sum(axis=1))
+        ),
+    }
+    return ConnectomeBundle(
+        connectivity=conn,
+        raw_counts=bundle.raw_counts,
+        transformed_weights=bundle.transformed_weights,
+        weights=weights,
+        tract_lengths=bundle.tract_lengths,
+        region_labels=bundle.region_labels,
+        centres=bundle.centres,
+        audit=audit,
+    )
+
+
+def with_network_pair_gains(
+    bundle: ConnectomeBundle,
+    network_labels: np.ndarray,
+    gains_by_pair: dict[tuple[str, str], float],
+    *,
+    preserve_total_strength: bool = True,
+) -> ConnectomeBundle:
+    """Scale named within/between-network edge blocks symmetrically.
+
+    Pair keys are order independent. Unspecified network pairs keep gain one.
+    Optional total-strength preservation separates relative topology changes
+    from the global-coupling parameter used by the dynamical model.
+    """
+
+    labels = np.asarray(network_labels).astype(str)
+    if labels.shape != bundle.region_labels.shape:
+        raise ValueError("Network labels must match the connectome region count")
+    known = set(labels)
+    normalized: dict[tuple[str, str], float] = {}
+    for raw_pair, raw_gain in gains_by_pair.items():
+        if len(raw_pair) != 2:
+            raise ValueError(f"Invalid network pair: {raw_pair}")
+        pair = tuple(sorted((str(raw_pair[0]), str(raw_pair[1]))))
+        if not set(pair).issubset(known):
+            raise ValueError(f"Unknown network in pair: {raw_pair}")
+        gain = float(raw_gain)
+        if not np.isfinite(gain) or gain <= 0:
+            raise ValueError("Network-pair gains must be positive and finite")
+        if pair in normalized and not np.isclose(normalized[pair], gain):
+            raise ValueError(f"Conflicting gains for network pair: {pair}")
+        normalized[pair] = gain
+
+    edge_gain = np.ones_like(bundle.weights)
+    for first_index, first in enumerate(labels):
+        for second_index in range(first_index + 1, len(labels)):
+            pair = tuple(sorted((first, labels[second_index])))
+            gain = normalized.get(pair, 1.0)
+            edge_gain[first_index, second_index] = gain
+            edge_gain[second_index, first_index] = gain
+    weights = bundle.weights * edge_gain
+    strength_scale = 1.0
+    if preserve_total_strength:
+        original_total = float(bundle.weights.sum())
+        modified_total = float(weights.sum())
+        if original_total <= 0 or modified_total <= 0:
+            raise ValueError("Connectome total strength must be positive")
+        strength_scale = original_total / modified_total
+        weights *= strength_scale
+
+    conn = Connectivity(
+        weights=weights,
+        tract_lengths=bundle.tract_lengths.copy(),
+        centres=bundle.centres.copy(),
+        region_labels=bundle.region_labels.copy(),
+        orientations=bundle.connectivity.orientations.copy(),
+        cortical=bundle.connectivity.cortical.copy(),
+        hemispheres=bundle.connectivity.hemispheres.copy(),
+        speed=bundle.connectivity.speed.copy(),
+    )
+    conn.configure()
+    audit = {
+        **bundle.audit,
+        "network_pair_gains": {
+            f"{first}__{second}": float(gain)
+            for (first, second), gain in sorted(normalized.items())
+        },
+        "network_pair_preserve_total_strength": preserve_total_strength,
+        "network_pair_total_strength_scale": strength_scale,
+        "scaled_weight_max_after_network_pair_gains": float(weights.max()),
+    }
+    return ConnectomeBundle(
+        connectivity=conn,
+        raw_counts=bundle.raw_counts,
+        transformed_weights=bundle.transformed_weights,
+        weights=weights,
+        tract_lengths=bundle.tract_lengths,
+        region_labels=bundle.region_labels,
+        centres=bundle.centres,
+        audit=audit,
+    )

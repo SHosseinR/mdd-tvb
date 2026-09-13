@@ -1,7 +1,7 @@
 # MDD–TVB baseline
 
-This repository implements the pre-inference core of a planned whole-brain TMS
-model:
+This repository implements a whole-brain TMS-modeling core and its first
+hierarchical EEG-fitting stage:
 
 1. audit and scale the existing Schaefer-200 structural connectome;
 2. run a delayed, stochastic, spatially heterogeneous TVB Jansen–Rit network;
@@ -12,8 +12,8 @@ model:
    by the earlier EEG project;
 6. save numerical data, provenance, spectra, and QC plots.
 
-There is intentionally no subject fitting, effective-connectivity fitting,
-plasticity, FEM field, or stimulation/protocol optimization in this version.
+M5 adds diagnosis-level and individual EEG fitting. Plasticity, FEM fields,
+stimulation, and protocol optimization remain later milestones.
 
 ## Scientific definition
 
@@ -31,8 +31,8 @@ The present gain matrix is an explicitly documented template approximation:
 
 - source locations: Schaefer-200 MNI centroids;
 - source orientations: radial vectors derived from those centroids;
-- sensors: the exact 26 TDBRAIN labels in MNE `colin27_1005` positions (the
-  current name for the positions previously exposed as `standard_1005`);
+- sensors: the exact 26 TDBRAIN labels at the published TDBRAIN Table 3 XYZ
+  positions;
 - volume conductor: TVB analytic single sphere;
 - near field: a declared 20 mm source–sensor distance floor prevents individual
   coarse parcel centroids from creating an inverse-square singularity;
@@ -43,9 +43,10 @@ It is not a subject-specific BEM/FEM forward solution and amplitudes are not
 calibrated to microvolts.
 
 The TDBRAIN channel *labels* and order are taken from the actual EEGLAB files.
-Those files contain NaN channel coordinates, so the lead field necessarily uses
-MNE's `colin27_1005` template locations for the matching names; they are not
-digitized subject electrode positions. The full construction is documented in
+Those files contain NaN channel coordinates, so the lead field uses the
+dataset-publication coordinates rather than digitized subject positions. The
+published directions are close to, but not identical to, MNE's
+`colin27_1005`/`standard_1005` template. The full construction is documented in
 `docs/EEG_FORWARD_MODEL.md`.
 
 ## Setup on this machine
@@ -97,14 +98,55 @@ Jansen–Rit equilibrium produces large channel-specific DC offsets. Multitaper
 spectra are computed after per-channel demeaning; neither operation alters the
 stored monitor signal.
 
-## What must happen before fitting
+The empirical `.set` files used by the preceding project were already filtered
+at 1–60 Hz, notch filtered at 49–51 Hz, high-amplitude segments removed, and
+average referenced. Future fitting must apply a matched observation-
+preprocessing operator to simulated EEG; it should not fit the arbitrary model
+DC equilibrium or request biased empirical data.
 
-The current parameters are a transparent baseline, not a calibrated healthy or
-MDD model. Before fitting real EEG, the next stage must perform parameter sweeps,
-stability mapping, integration-step sensitivity, simulated-data recovery, and
-held-out feature definitions. A fit should estimate only a small hierarchical
-parameter set and structured effective-coupling deviations—not 13,861 free
-edges.
+## M5: group and subject fitting
+
+M5 fits amplitude- and DC-invariant EEG summaries with a direct TVB simulation
+bank. It includes global coupling, mean drive, separate excitatory and
+inhibitory inverse-time-constant scales, stochastic-drive magnitude, and
+regional time-constant dispersion. Seven bounded structural-network endpoint
+gains are implemented, but the revised pilot fixes them to one: complete ±10%
+network-pair and synthetic-recovery audits found that these EEG observations do
+not presently identify subject-level tract-weight changes.
+
+```powershell
+& .\.conda\python.exe scripts\run_m5.py
+```
+
+The revised pilot uses `configs/m5_fit_v2.toml`. It adds mechanistic spectral
+descriptors, training-only split-half-reliable theta/alpha/beta coherence
+edges, and a fixed group-blind colored background observation component:
+
+```powershell
+& .\.conda\python.exe scripts\run_m5.py --config configs\m5_fit_v2.toml
+```
+
+The empirical recording is divided temporally. The first half is used for
+individual fitting and the second half is retained for subject-level
+validation. A stratified subject holdout independently checks group fits. See
+`docs/M5_FITTING.md` for the full estimand, loss, outputs, and limitations.
+The main outputs include `fit/m5_fit_summary.png`, which compares each group's
+empirical averages with the average of its independently fitted subject models;
+`fit/m5_individual_validation.png`, which compares fit-half and unseen-half
+metrics; and `fit/m5_eeg_examples.png`, which shows representative empirical and
+selected-TVB traces. `feature_audit/m5_fitted_group_effects.png` directly tests
+whether diagnosis-blind individual fits preserve empirical Healthy–MDD feature
+effects. The current revised pilot fails that mechanistic group-effect gate for
+alpha topography and alpha/beta coherence, so it must not yet be used for TMS
+target claims.
+
+## Fitting cautions
+
+The baseline parameters are a transparent reference, not a calibrated healthy
+or MDD model. M5 therefore uses a small structured parameterization rather than
+13,861 independently adjustable edges, reports synthetic-recovery diagnostics,
+and evaluates held-out data. Results remain mechanistic candidates rather than
+identified biological ground truth.
 
 Neural noise is applied only to Jansen–Rit's `y4` derivative state, corresponding
 to the excitatory-input pathway, and has a configurable temporal correlation.
@@ -112,8 +154,10 @@ Small, seeded network- and parcel-level variations in mean drive, common E/I
 time scale, and drive variance prevent an unrealistically homogeneous periodic
 orbit. The visual network receives a small, explicit increase in drive and drive
 variance as an eyes-closed baseline prior. Every realized value is saved.
-Observation noise is disabled; downstream work can add a separately calibrated
-sensor-noise model.
+Observation noise is disabled in the baseline run. The revised M5 pilot adds a
+fixed, group-blind colored background before the same CSD transform. It is a
+pragmatic observation/unmodelled-neural component, not a fitted disease
+parameter.
 
 The 30-second duration follows a conservative convergence-oriented baseline for
 network/spectral summaries. The model remains a hypothesis generator: these

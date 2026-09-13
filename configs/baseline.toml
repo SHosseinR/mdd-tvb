@@ -46,6 +46,7 @@ visual_noise_multiplier = 1.40
 reference = "average"
 surface_laplacian = true
 montage = "colin27_1005"
+coordinate_file = "data/sensors/TDBRAIN_Table3_electrode_coordinates.csv"
 minimum_source_sensor_distance_mm = 20.0
 visualization_highpass_hz = 1.0
 channels = [

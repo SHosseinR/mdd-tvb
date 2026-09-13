@@ -94,6 +94,13 @@ def build_regional_parameters(
     drive[visual] *= settings.visual_drive_multiplier
     noise_multiplier[visual] *= settings.visual_noise_multiplier
 
+    for name, multiplier in (settings.network_drive_multipliers or {}).items():
+        drive[networks == name] *= float(multiplier)
+    for name, multiplier in (settings.network_time_scale_multipliers or {}).items():
+        time_scale[networks == name] *= float(multiplier)
+    for name, multiplier in (settings.network_noise_multipliers or {}).items():
+        noise_multiplier[networks == name] *= float(multiplier)
+
     return RegionalParameters(
         network_labels=networks,
         mu=model.mu * drive,
@@ -104,4 +111,3 @@ def build_regional_parameters(
         time_scale_multiplier=time_scale,
         noise_multiplier=noise_multiplier,
     )
-

@@ -52,7 +52,7 @@ def main() -> None:
     sfreq_hz = 1000.0 / float(np.median(np.diff(time_ms)))
     eeg_csd = (
         apply_surface_laplacian(
-            eeg, config.monitor.channels, sfreq_hz, config.monitor.montage
+            eeg, config.monitor.channels, sfreq_hz, config.monitor
         )
         if config.monitor.surface_laplacian
         else None

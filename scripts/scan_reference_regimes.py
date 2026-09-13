@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -69,6 +70,8 @@ def main() -> None:
         default=[1.0],
         help="Common multiplier applied to JR a and b inverse time constants.",
     )
+    parser.add_argument("--a-scales", type=float, nargs="+", default=None)
+    parser.add_argument("--b-scales", type=float, nargs="+", default=None)
     parser.add_argument("--duration-ms", type=float, default=2500.0)
     parser.add_argument("--transient-ms", type=float, default=500.0)
     parser.add_argument("--dt-ms", type=float, default=None)
@@ -76,6 +79,20 @@ def main() -> None:
     parser.add_argument("--noise-taus", type=float, nargs="+", default=None)
     parser.add_argument(
         "--visual-noise-multipliers", type=float, nargs="+", default=None
+    )
+    parser.add_argument(
+        "--regional-time-log-sds",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Regional log-SD of the common local a/b multiplier.",
+    )
+    parser.add_argument(
+        "--max-parameter-deviations",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Symmetric cap around one for heterogeneity multipliers.",
     )
     parser.add_argument("--output", type=Path, default=Path("outputs/reference_regime_scan.csv"))
     args = parser.parse_args()
@@ -99,59 +116,78 @@ def main() -> None:
     visual_noise_multipliers = args.visual_noise_multipliers or [
         base.heterogeneity.visual_noise_multiplier
     ]
-    for visual_noise_multiplier in visual_noise_multipliers:
-        for noise_nsig in noise_nsigs:
-            for noise_tau in noise_taus:
-                for time_scale in args.time_scales:
-                    for mu in args.mus:
-                        for gain in args.gains:
-                            model = replace(
-                                base.model,
-                                mu=mu,
-                                a=base.model.a * time_scale,
-                                b=base.model.b * time_scale,
-                            )
-                            config = replace(
-                                base,
-                                model=model,
-                                coupling=replace(base.coupling, global_gain=gain),
-                                simulation=replace(
-                                    base.simulation,
-                                    noise_nsig=noise_nsig,
-                                    noise_tau_ms=noise_tau,
-                                ),
-                                heterogeneity=replace(
-                                    base.heterogeneity,
-                                    visual_noise_multiplier=visual_noise_multiplier,
-                                ),
-                            )
-                            result = run_baseline(config, connectome)
-                            region_peak, region_alpha = peak_and_alpha_ratio(result.region_psp, sfreq)
-                            eeg_peak, eeg_alpha = peak_and_alpha_ratio(result.eeg, sfreq)
-                            eeg_entropy, eeg_pc5, posterior_ratio = compact_realism_metrics(
-                                result.eeg, sfreq, result.channel_names
-                            )
-                            row = {
-                                "noise_nsig": noise_nsig,
-                                "noise_tau_ms": noise_tau,
-                                "visual_noise_multiplier": visual_noise_multiplier,
-                                "time_scale": time_scale,
-                                "a": model.a,
-                                "b": model.b,
-                                "mu": mu,
-                                "global_gain": gain,
-                                "region_peak_hz": region_peak,
-                                "region_alpha_power_fraction_1_45": region_alpha,
-                                "eeg_peak_hz": eeg_peak,
-                                "eeg_alpha_power_fraction_1_45": eeg_alpha,
-                                "eeg_spectral_entropy_1_45": eeg_entropy,
-                                "eeg_pc1_to_pc5_variance_fraction": eeg_pc5,
-                                "posterior_to_anterior_alpha_power_ratio": posterior_ratio,
-                                "region_std": result.metadata["region_psp_standard_deviation"],
-                                "eeg_std": result.metadata["eeg_standard_deviation"],
-                            }
-                            rows.append(row)
-                            print(row, flush=True)
+    regional_time_log_sds = args.regional_time_log_sds or [
+        base.heterogeneity.regional_time_scale_log_sd
+    ]
+    max_parameter_deviations = args.max_parameter_deviations or [
+        base.heterogeneity.max_parameter_deviation
+    ]
+    if args.a_scales is not None or args.b_scales is not None:
+        a_scales = args.a_scales or [1.0]
+        b_scales = args.b_scales or [1.0]
+        scale_pairs = list(product(a_scales, b_scales))
+    else:
+        scale_pairs = [(value, value) for value in args.time_scales]
+    for max_parameter_deviation in max_parameter_deviations:
+        for regional_time_log_sd in regional_time_log_sds:
+            for visual_noise_multiplier in visual_noise_multipliers:
+                for noise_nsig in noise_nsigs:
+                    for noise_tau in noise_taus:
+                        for a_scale, b_scale in scale_pairs:
+                            for mu in args.mus:
+                                for gain in args.gains:
+                                    model = replace(
+                                        base.model,
+                                        mu=mu,
+                                        a=base.model.a * a_scale,
+                                        b=base.model.b * b_scale,
+                                    )
+                                    config = replace(
+                                        base,
+                                        model=model,
+                                        coupling=replace(base.coupling, global_gain=gain),
+                                        simulation=replace(
+                                            base.simulation,
+                                            noise_nsig=noise_nsig,
+                                            noise_tau_ms=noise_tau,
+                                        ),
+                                        heterogeneity=replace(
+                                            base.heterogeneity,
+                                            visual_noise_multiplier=visual_noise_multiplier,
+                                            regional_time_scale_log_sd=regional_time_log_sd,
+                                            max_parameter_deviation=max_parameter_deviation,
+                                        ),
+                                    )
+                                    result = run_baseline(config, connectome)
+                                    region_peak, region_alpha = peak_and_alpha_ratio(result.region_psp, sfreq)
+                                    eeg_peak, eeg_alpha = peak_and_alpha_ratio(result.eeg, sfreq)
+                                    eeg_entropy, eeg_pc5, posterior_ratio = compact_realism_metrics(
+                                        result.eeg, sfreq, result.channel_names
+                                    )
+                                    row = {
+                                        "noise_nsig": noise_nsig,
+                                        "noise_tau_ms": noise_tau,
+                                        "visual_noise_multiplier": visual_noise_multiplier,
+                                        "regional_time_scale_log_sd": regional_time_log_sd,
+                                        "max_parameter_deviation": max_parameter_deviation,
+                                        "a_scale": a_scale,
+                                        "b_scale": b_scale,
+                                        "a": model.a,
+                                        "b": model.b,
+                                        "mu": mu,
+                                        "global_gain": gain,
+                                        "region_peak_hz": region_peak,
+                                        "region_alpha_power_fraction_1_45": region_alpha,
+                                        "eeg_peak_hz": eeg_peak,
+                                        "eeg_alpha_power_fraction_1_45": eeg_alpha,
+                                        "eeg_spectral_entropy_1_45": eeg_entropy,
+                                        "eeg_pc1_to_pc5_variance_fraction": eeg_pc5,
+                                        "posterior_to_anterior_alpha_power_ratio": posterior_ratio,
+                                        "region_std": result.metadata["region_psp_standard_deviation"],
+                                        "eeg_std": result.metadata["eeg_standard_deviation"],
+                                    }
+                                    rows.append(row)
+                                    print(row, flush=True)
 
     output = args.output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

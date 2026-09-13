@@ -56,6 +56,7 @@ class MonitorConfig:
     surface_laplacian: bool
     montage: str
     channels: tuple[str, ...]
+    coordinate_file: Path | None = None
     minimum_source_sensor_distance_mm: float = 0.0
     visualization_highpass_hz: float = 1.0
 
@@ -71,6 +72,9 @@ class HeterogeneityConfig:
     max_parameter_deviation: float = 0.15
     visual_drive_multiplier: float = 1.03
     visual_noise_multiplier: float = 1.40
+    network_drive_multipliers: dict[str, float] | None = None
+    network_time_scale_multipliers: dict[str, float] | None = None
+    network_noise_multipliers: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,11 @@ def load_config(path: str | Path) -> RunConfig:
         surface_laplacian=bool(monitor_raw.get("surface_laplacian", False)),
         montage=str(monitor_raw.get("montage", "standard_1005")),
         channels=tuple(str(value) for value in monitor_raw["channels"]),
+        coordinate_file=(
+            _resolve(project_root, monitor_raw["coordinate_file"])
+            if monitor_raw.get("coordinate_file")
+            else None
+        ),
         minimum_source_sensor_distance_mm=float(
             monitor_raw.get("minimum_source_sensor_distance_mm", 0.0)
         ),
@@ -152,8 +161,20 @@ def load_config(path: str | Path) -> RunConfig:
             raise ValueError(f"{name} must be non-negative")
     if heterogeneity.visual_drive_multiplier <= 0 or heterogeneity.visual_noise_multiplier <= 0:
         raise ValueError("visual multipliers must be positive")
+    for mapping_name in (
+        "network_drive_multipliers",
+        "network_time_scale_multipliers",
+        "network_noise_multipliers",
+    ):
+        mapping = getattr(heterogeneity, mapping_name) or {}
+        if any(float(value) <= 0 for value in mapping.values()):
+            raise ValueError(f"{mapping_name} values must be positive")
     if len(monitor.channels) != len(set(monitor.channels)):
         raise ValueError("monitor channel labels must be unique")
+    if monitor.coordinate_file is not None and not monitor.coordinate_file.is_file():
+        raise FileNotFoundError(
+            f"sensor coordinate file not found: {monitor.coordinate_file}"
+        )
     if monitor.minimum_source_sensor_distance_mm < 0:
         raise ValueError("minimum_source_sensor_distance_mm must be non-negative")
     nyquist_hz = 500.0 / simulation.monitor_period_ms

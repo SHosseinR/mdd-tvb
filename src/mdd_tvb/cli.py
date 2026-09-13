@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import load_config
 from .connectome import load_connectome
-from .eeg import sensor_locations
+from .eeg import sensor_coordinate_audit, sensor_locations
 from .reporting import save_run
 from .simulation import run_baseline
 
@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> None:
                 "count": len(config.monitor.channels),
                 "labels": list(config.monitor.channels),
                 "montage": config.monitor.montage,
+                "coordinates": sensor_coordinate_audit(config.monitor),
                 "unit_norm_max_error": float(abs((locations**2).sum(axis=1) ** 0.5 - 1).max()),
             },
         }
@@ -51,4 +52,3 @@ def main(argv: list[str] | None = None) -> None:
         "output_dir": str(output_dir),
         "simulation": result.metadata,
     }, indent=2))
-
