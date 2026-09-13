@@ -1,0 +1,250 @@
+"""Multi-seed TVB simulation bank for cross-spectral M5."""
+
+from __future__ import annotations
+
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, replace
+import logging
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from .config import load_config
+from .connectome import load_connectome
+from .heterogeneity import network_labels
+from .multifrequency import run_dual_jansen_rit
+from .spectral_config import SpectralM5Config
+from .spectral_features import estimate_cross_spectrum
+from .spectral_parameterization import (
+    PARAMETER_NAMES,
+    SpectralCandidate,
+    make_spectral_design,
+)
+
+
+@dataclass(frozen=True)
+class SpectralSimulationBank:
+    parameters: np.ndarray
+    parameter_names: np.ndarray
+    frequency_hz: np.ndarray
+    channel_names: np.ndarray
+    csd_replicates: np.ndarray
+
+    @property
+    def csd(self) -> np.ndarray:
+        return np.mean(self.csd_replicates, axis=1)
+
+
+_CACHE: dict[str, tuple[Any, Any, np.ndarray]] = {}
+
+
+def _inputs(path: str) -> tuple[Any, Any, np.ndarray]:
+    if path not in _CACHE:
+        baseline = load_config(path)
+        connectome = load_connectome(baseline.paths, baseline.connectivity)
+        _CACHE[path] = (
+            baseline,
+            connectome,
+            network_labels(connectome.region_labels),
+        )
+    return _CACHE[path]
+
+
+def _network_time_map(networks: np.ndarray, contrast: float) -> dict[str, float]:
+    names, counts = np.unique(networks.astype(str), return_counts=True)
+    target_count = int(counts[np.flatnonzero(names == "DorsAttn")[0]])
+    other_multiplier = 1.0 - contrast * target_count / (len(networks) - target_count)
+    if other_multiplier <= 0.0 or 1.0 + contrast <= 0.0:
+        raise ValueError("DorsAttn time-scale contrast produces a non-positive multiplier")
+    return {
+        str(name): (1.0 + contrast if name == "DorsAttn" else other_multiplier)
+        for name in names
+    }
+
+
+def build_spectral_run_config(
+    baseline: Any,
+    networks: np.ndarray,
+    candidate: SpectralCandidate,
+    config: SpectralM5Config,
+    replicate: int,
+) -> Any:
+    design = config.design
+    return replace(
+        baseline,
+        model=replace(
+            baseline.model,
+            mu=candidate.mu,
+            a=baseline.model.a * candidate.a_scale,
+            b=baseline.model.b * candidate.b_scale,
+        ),
+        coupling=replace(
+            baseline.coupling, global_gain=candidate.global_coupling
+        ),
+        simulation=replace(
+            baseline.simulation,
+            duration_ms=design.duration_ms,
+            transient_ms=design.transient_ms,
+            dt_ms=design.dt_ms,
+            noise_nsig=candidate.noise_nsig,
+            noise_tau_ms=candidate.noise_tau_ms,
+            seed=design.simulation_seed + replicate * 100003,
+        ),
+        heterogeneity=replace(
+            baseline.heterogeneity,
+            network_time_scale_multipliers=_network_time_map(
+                networks, candidate.dorsattn_time_contrast
+            ),
+        ),
+        monitor=replace(
+            baseline.monitor,
+            surface_laplacian=config.empirical.apply_surface_laplacian,
+        ),
+    )
+
+
+def simulate_spectral_candidate(
+    baseline_config_path: str,
+    candidate: SpectralCandidate,
+    replicate: int,
+    config: SpectralM5Config,
+) -> dict[str, Any]:
+    logging.raiseExceptions = False
+    baseline, connectome, networks = _inputs(baseline_config_path)
+    run_config = build_spectral_run_config(
+        baseline, networks, candidate, config, replicate
+    )
+    result = run_dual_jansen_rit(
+        run_config,
+        connectome,
+        fast_ratio=candidate.fast_ratio,
+        fast_fraction=candidate.fast_fraction,
+        inhibitory_scale=1.0,
+        speed_mm_per_ms=candidate.speed_mm_per_ms,
+        cross_coupling=config.design.cross_coupling,
+    )
+    sfreq_hz = 1000.0 / run_config.simulation.monitor_period_ms
+    frequency, csd, epoch_count = estimate_cross_spectrum(
+        result.eeg, sfreq_hz, config.spectral
+    )
+    return {
+        "candidate_index": candidate.candidate_index,
+        "replicate": replicate,
+        "frequency_hz": frequency,
+        "channel_names": np.asarray(result.channel_names, dtype="U16"),
+        "csd": csd,
+        "epoch_count": epoch_count,
+    }
+
+
+def build_spectral_simulation_bank(
+    config: SpectralM5Config,
+    design_samples: int | None = None,
+) -> SpectralSimulationBank:
+    design_settings = (
+        config.design
+        if design_samples is None
+        else replace(config.design, samples=design_samples)
+    )
+    working = replace(config, design=design_settings)
+    candidates = make_spectral_design(design_settings)
+    tasks = [
+        (candidate, replicate)
+        for candidate in candidates
+        for replicate in range(design_settings.replicates)
+    ]
+    rows: list[dict[str, Any]] = []
+    failures: list[dict[str, str | int]] = []
+    if design_settings.n_jobs == 1:
+        for index, (candidate, replicate) in enumerate(tasks, start=1):
+            try:
+                rows.append(
+                    simulate_spectral_candidate(
+                        str(config.paths.baseline_config), candidate, replicate, working
+                    )
+                )
+            except Exception as error:
+                failures.append(
+                    {
+                        "candidate_index": candidate.candidate_index,
+                        "replicate": replicate,
+                        "error": repr(error),
+                    }
+                )
+            print(f"Spectral TVB bank: {index}/{len(tasks)}", flush=True)
+    else:
+        with ProcessPoolExecutor(max_workers=design_settings.n_jobs) as pool:
+            futures = {
+                pool.submit(
+                    simulate_spectral_candidate,
+                    str(config.paths.baseline_config),
+                    candidate,
+                    replicate,
+                    working,
+                ): (candidate.candidate_index, replicate)
+                for candidate, replicate in tasks
+            }
+            for index, future in enumerate(as_completed(futures), start=1):
+                candidate_index, replicate = futures[future]
+                try:
+                    rows.append(future.result())
+                except Exception as error:
+                    failures.append(
+                        {
+                            "candidate_index": candidate_index,
+                            "replicate": replicate,
+                            "error": repr(error),
+                        }
+                    )
+                if index % design_settings.n_jobs == 0 or index == len(futures):
+                    print(f"Spectral TVB bank: {index}/{len(futures)}", flush=True)
+
+    bank_dir = config.paths.output_dir / "bank"
+    bank_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        failures, columns=["candidate_index", "replicate", "error"]
+    ).to_csv(bank_dir / "simulation_failures.csv", index=False)
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} spectral simulations failed; see simulation_failures.csv"
+        )
+    rows.sort(key=lambda row: (row["candidate_index"], row["replicate"]))
+    frequency = rows[0]["frequency_hz"]
+    channels = rows[0]["channel_names"]
+    if any(
+        not np.array_equal(row["frequency_hz"], frequency)
+        or not np.array_equal(row["channel_names"], channels)
+        for row in rows
+    ):
+        raise RuntimeError("Simulation bank spectral axes differ")
+    csd = np.stack([row["csd"] for row in rows]).reshape(
+        len(candidates), design_settings.replicates, *rows[0]["csd"].shape
+    )
+    bank = SpectralSimulationBank(
+        parameters=np.stack([candidate.numeric_vector() for candidate in candidates]),
+        parameter_names=np.asarray(PARAMETER_NAMES, dtype="U48"),
+        frequency_hz=frequency,
+        channel_names=channels,
+        csd_replicates=csd,
+    )
+    np.savez_compressed(bank_dir / "spectral_simulation_bank.npz", **bank.__dict__)
+    table = pd.DataFrame(bank.parameters, columns=bank.parameter_names)
+    table.insert(0, "candidate_index", np.arange(len(candidates)))
+    table.to_csv(bank_dir / "candidate_parameters.csv", index=False)
+    pd.DataFrame(
+        {
+            "candidate_index": [row["candidate_index"] for row in rows],
+            "replicate": [row["replicate"] for row in rows],
+            "spectral_epoch_count": [row["epoch_count"] for row in rows],
+        }
+    ).to_csv(bank_dir / "replicates.csv", index=False)
+    return bank
+
+
+def load_spectral_simulation_bank(path: Path) -> SpectralSimulationBank:
+    with np.load(path) as arrays:
+        return SpectralSimulationBank(
+            **{name: arrays[name] for name in SpectralSimulationBank.__dataclass_fields__}
+        )

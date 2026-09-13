@@ -1,0 +1,71 @@
+[paths]
+baseline_config = "configs/baseline.toml"
+dataset_root = "D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1/output/preprocessed_tdbrain_restEC_set2"
+output_dir = "outputs/m5_spectral"
+
+[empirical]
+groups = ["Healthy", "MDD"]
+max_duration_s = 120.0
+n_jobs = 4
+# Keep the sensor covariance compatible with the explicit lead field and the
+# diagonal sensor-noise nuisance. Surface Laplacian remains a validation view.
+apply_surface_laplacian = false
+
+[spectral]
+epoch_seconds = 4.0
+frequency_min_hz = 2.0
+frequency_max_hz = 40.0
+frequency_bin_hz = 1.0
+sensor_modes = 10
+# Zero means retain every standardized coordinate after the 10-mode sensor
+# projection. This prevents PCA from hiding a common model-data mismatch.
+auto_components = 0
+cross_components = 0
+reliability_threshold = 0.20
+reliability_max_auto_coordinates = 192
+reliability_max_cross_coordinates = 256
+reliability_min_coordinates = 24
+diagonal_shrinkage = 0.05
+auto_weight = 0.50
+cross_weight = 0.50
+holdout_fraction = 0.20
+split_seed = 20260913
+
+[design]
+samples = 128
+replicates = 3
+# 2 s burn-in followed by 60 s analysed data per random seed.
+duration_ms = 62000.0
+transient_ms = 2000.0
+dt_ms = 0.5
+n_jobs = 6
+seed = 161803
+simulation_seed = 29009
+global_coupling_range = [4.0, 9.0]
+speed_range = [3.0, 10.0]
+mu_range = [0.19, 0.27]
+a_scale_range = [0.70, 0.98]
+b_scale_range = [0.85, 1.10]
+fast_ratio_range = [1.6, 2.8]
+fast_fraction_range = [0.10, 0.50]
+noise_nsig_range = [0.001, 0.020]
+noise_tau_ms_range = [0.5, 4.0]
+dorsattn_time_contrast_range = [-0.10, 0.10]
+cross_coupling = 0.12
+reference_global_coupling = 7.0
+reference_speed_mm_per_ms = 4.0
+reference_mu = 0.22
+reference_a_scale = 0.80
+reference_b_scale = 0.95
+reference_fast_ratio = 2.2
+reference_fast_fraction = 0.25
+reference_noise_nsig = 0.010
+reference_noise_tau_ms = 1.0
+reference_dorsattn_time_contrast = 0.0
+
+[posterior]
+# These are marginalized observation nuisances, never disease parameters.
+observation_noise_fractions = [0.0, 0.25, 0.50, 0.75]
+observation_noise_exponents = [0.0, 1.0, 2.0, 3.0]
+prior_strength = 0.02
+minimum_temperature = 0.05

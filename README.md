@@ -140,6 +140,26 @@ effects. The current revised pilot fails that mechanistic group-effect gate for
 alpha topography and alpha/beta coherence, so it must not yet be used for TMS
 target claims.
 
+### Cross-spectral M5 redesign
+
+The literature-driven replacement is now implemented in
+`scripts/run_m5_spectral.py`. It uses two locally coupled Jansen--Rit generators
+per parcel, separate excitatory/inhibitory time scales, complex 2--40 Hz sensor
+cross spectra reduced to ten group-blind sensor modes, explicit
+periodic/aperiodic separation, multi-seed simulation, observation-noise
+marginalization, and a finite-bank posterior for every subject. Reliable real
+and imaginary coherency coordinates are selected using two quarters inside the
+fitting half; the final half stays unseen.
+
+```powershell
+& .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral_pilot.toml
+```
+
+The completed eight-candidate pilot still underfits the unseen data relative to
+the pooled empirical null, so the 128 x 3 production bank is configured but not
+yet scientifically justified. See `docs/M5_SPECTRAL_REDESIGN.md` for the exact
+method, outputs, failure metrics, and next acceptance gate.
+
 ## Fitting cautions
 
 The baseline parameters are a transparent reference, not a calibrated healthy
