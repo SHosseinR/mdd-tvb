@@ -167,6 +167,14 @@ def main() -> None:
         [index for index, value in enumerate(ordered_ids) if value in prediction_by_subject]
     )
     prediction_array = np.stack([prediction_by_subject[ordered_ids[index]] for index in evaluated])
+    np.savez_compressed(
+        output_dir / "out_of_fold_posterior_predictive_csd.npz",
+        subject_ids=ordered_ids[evaluated],
+        groups=fitting.groups[evaluated],
+        frequency_hz=fitting.frequency_hz,
+        channel_names=fitting.channel_names,
+        csd=prediction_array,
+    )
     group_effects = _plot_group_effects(
         output_dir / "nested_group_effects.png",
         subset_cross_spectral_collection(validation, evaluated),

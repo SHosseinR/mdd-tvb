@@ -1,6 +1,6 @@
 # M5.2 development log
 
-**Opened:** 2026-09-18  
+**Opened:** 2026-09-18
 **Scope:** leakage-safe improvement of the resting-state EEG observation and
 connectivity model after the frozen M5.1 result
 

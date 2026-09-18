@@ -1,7 +1,8 @@
 # M5.2 preregistered development and validation protocol
 
-**Protocol date:** 2026-09-18  
-**Predecessor:** frozen M5.1 fixed-connectome production run  
+**Protocol date:** 2026-09-18
+
+**Predecessor:** frozen M5.1 fixed-connectome production run
 **Purpose:** improve spatial/topographic and connectivity fidelity without
 reusing the consumed M5.1 final holdout for model selection
 

@@ -2,8 +2,9 @@
 
 ## Technical status report and forward plan
 
-**Report date:** 2026-09-18  
-**Repository:** `mdd-tvb`  
+**Report date:** 2026-09-18
+
+**Repository:** `mdd-tvb`
 **Current implementation status:** M1–M4 complete; M5.1 production complete but not scientifically accepted; stimulation optimization blocked
 
 ---
