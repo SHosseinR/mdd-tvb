@@ -40,6 +40,7 @@ class CrossSpectralConfig:
     reliability_max_topography_coordinates: int = 24
     reliability_min_coordinates: int = 24
     diagonal_shrinkage: float = 0.05
+    cross_metric: str = "complex_coherency"
     auto_weight: float = 0.45
     cross_weight: float = 0.25
     topography_weight: float = 0.30
@@ -306,6 +307,15 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         raise ValueError("posterior temperatures must be positive")
     if not 0.0 <= spectral.diagonal_shrinkage < 1.0:
         raise ValueError("diagonal_shrinkage must be in [0, 1)")
+    if spectral.cross_metric not in {
+        "complex_coherency",
+        "imaginary_coherency",
+        "lagged_coherency",
+    }:
+        raise ValueError(
+            "cross_metric must be complex_coherency, imaginary_coherency, "
+            "or lagged_coherency"
+        )
     if spectral.sensor_modes < 2 or spectral.sensor_modes >= 26:
         raise ValueError("sensor_modes must be between 2 and 25 for average-referenced EEG")
     if spectral.sensor_basis_method not in {"empirical", "leadfield"}:

@@ -28,6 +28,7 @@ reliability_max_cross_coordinates = 16
 reliability_max_topography_coordinates = 8
 reliability_min_coordinates = 8
 diagonal_shrinkage = 0.05
+cross_metric = "complex_coherency"
 # Training-only Pareto point: materially improves direct alpha topography while
 # keeping total unseen training-subject cost below the pooled empirical null.
 auto_weight = 0.45
@@ -98,6 +99,9 @@ source_background_fractions = [0.0]
 source_background_exponents = [1.0]
 prior_strength = 0.02
 spatial_prior_strength = 0.05
-structural_prior_strength = 0.20
+# Training-only observability audit: 0.20 suppressed recoverable structural
+# effects below the declared recovery gate; 0.05 retains conservative shrinkage
+# while both +/-10% modes remain synthetically recoverable.
+structural_prior_strength = 0.05
 temperature_multipliers = [0.005, 0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.0]
 minimum_temperature = 0.0001

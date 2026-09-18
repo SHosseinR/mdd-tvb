@@ -1,7 +1,7 @@
 [paths]
 baseline_config = "configs/baseline.toml"
 dataset_root = "D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1/output/preprocessed_tdbrain_restEC_set2"
-output_dir = "outputs/m5_spectral_calibration"
+output_dir = "outputs/m5_spectral_m51_calibration"
 
 [empirical]
 groups = ["Healthy", "MDD"]
@@ -24,6 +24,7 @@ reliability_max_cross_coordinates = 16
 reliability_max_topography_coordinates = 8
 reliability_min_coordinates = 8
 diagonal_shrinkage = 0.05
+cross_metric = "lagged_coherency"
 # Training-only Pareto point: materially improves direct alpha topography while
 # keeping total unseen training-subject cost below the pooled empirical null.
 auto_weight = 0.45
@@ -33,12 +34,14 @@ holdout_fraction = 0.20
 split_seed = 20260913
 
 [design]
-samples = 512
+samples = 1024
 strategy = "factorized"
 global_samples = 16
-spatial_samples = 32
+spatial_samples = 64
 replicates = 2
-duration_ms = 12000.0
+# Short calibration only: 2 s burn-in plus 12 s analyzed. A successful design
+# must be rerun with the 60-s, three-seed production settings.
+duration_ms = 14000.0
 transient_ms = 2000.0
 dt_ms = 0.5
 n_jobs = 6
@@ -53,8 +56,11 @@ fast_ratio_range = [1.4, 3.0]
 fast_fraction_range = [0.05, 0.55]
 noise_nsig_range = [0.0005, 0.040]
 noise_tau_ms_range = [0.25, 6.0]
-dorsattn_time_contrast_range = [-0.15, 0.15]
-visual_time_contrast_range = [-0.15, 0.15]
+# The production observability audit found only 45% of empirical alpha-
+# topography spread and identified these as the strongest stable spatial
+# controls. Widen them symmetrically for the M5.1 calibration.
+dorsattn_time_contrast_range = [-0.30, 0.30]
+visual_time_contrast_range = [-0.30, 0.30]
 default_noise_contrast_range = [-0.50, 0.50]
 visual_noise_contrast_range = [-0.50, 0.50]
 network_noise_mode_1_range = [-0.35, 0.35]
@@ -92,6 +98,6 @@ source_background_fractions = [0.0]
 source_background_exponents = [1.0]
 prior_strength = 0.02
 spatial_prior_strength = 0.05
-structural_prior_strength = 0.20
+structural_prior_strength = 0.05
 temperature_multipliers = [0.005, 0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.0]
 minimum_temperature = 0.0001

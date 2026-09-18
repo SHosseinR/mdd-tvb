@@ -144,6 +144,15 @@ def test_spectral_transform_and_design_are_bounded() -> None:
     # 26-channel relative alpha topography block.
     assert features.shape == (8, 7 + 7 + 26)
     assert np.isfinite(transformer.transform(noisy)).all()
+    for metric in ("imaginary_coherency", "lagged_coherency"):
+        alternative = fit_spectral_transformer(
+            collection,
+            np.arange(8),
+            replace(reduced, cross_metric=metric),
+        )
+        alternative_features = alternative.transform(collection.csd)
+        assert alternative_features.shape == features.shape
+        assert np.isfinite(alternative_features).all()
 
 
 def test_factorized_design_repeats_global_and_spatial_subdesigns() -> None:

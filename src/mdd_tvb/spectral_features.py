@@ -38,6 +38,7 @@ class SpectralFeatureTransformer:
     topography_scale: np.ndarray
     topography_components: np.ndarray
     topography_score_scale: np.ndarray
+    cross_metric: str
     diagonal_shrinkage: float
     auto_weight: float
     cross_weight: float
@@ -108,10 +109,28 @@ class SpectralFeatureTransformer:
         coherency = projected / np.maximum(denominator, np.finfo(float).tiny)
         upper = np.triu_indices(projected.shape[-1], k=1)
         cross = coherency[:, :, upper[0], upper[1]]
-        cross_flat = np.concatenate(
-            (np.real(cross).reshape(len(cross), -1), np.imag(cross).reshape(len(cross), -1)),
-            axis=1,
-        )
+        if self.cross_metric == "complex_coherency":
+            cross_flat = np.concatenate(
+                (
+                    np.real(cross).reshape(len(cross), -1),
+                    np.imag(cross).reshape(len(cross), -1),
+                ),
+                axis=1,
+            )
+        elif self.cross_metric == "imaginary_coherency":
+            # Signed imaginary coherency rejects instantaneous mixing from a
+            # common volume conductor while retaining phase-lag direction.
+            cross_flat = np.imag(cross).reshape(len(cross), -1)
+        elif self.cross_metric == "lagged_coherency":
+            # Pascual-Marqui-style lagged normalization removes the portion
+            # explainable by zero-lag real coherency.  It is not wPLI: wPLI
+            # requires the epoch-wise cross-periodogram distribution, which is
+            # intentionally not fabricated from an averaged CSD.
+            real = np.real(cross)
+            denominator = np.sqrt(np.maximum(1.0 - real**2, 1e-8))
+            cross_flat = (np.imag(cross) / denominator).reshape(len(cross), -1)
+        else:
+            raise ValueError(f"Unknown cross metric: {self.cross_metric}")
         return auto_flat, cross_flat, alpha_topography
 
     def transform_blocks(
@@ -413,17 +432,35 @@ def fit_spectral_transformer(
         auto_components=np.empty((0, settings.sensor_modes * (collection.frequency_hz.size + 1))),
         auto_score_scale=np.empty(0),
         cross_mean=np.zeros(
-            2 * collection.frequency_hz.size * settings.sensor_modes * (settings.sensor_modes - 1) // 2
+            (2 if settings.cross_metric == "complex_coherency" else 1)
+            * collection.frequency_hz.size
+            * settings.sensor_modes
+            * (settings.sensor_modes - 1)
+            // 2
         ),
         cross_scale=np.ones(
-            2 * collection.frequency_hz.size * settings.sensor_modes * (settings.sensor_modes - 1) // 2
+            (2 if settings.cross_metric == "complex_coherency" else 1)
+            * collection.frequency_hz.size
+            * settings.sensor_modes
+            * (settings.sensor_modes - 1)
+            // 2
         ),
-        cross_components=np.empty((0, 2 * collection.frequency_hz.size * settings.sensor_modes * (settings.sensor_modes - 1) // 2)),
+        cross_components=np.empty(
+            (
+                0,
+                (2 if settings.cross_metric == "complex_coherency" else 1)
+                * collection.frequency_hz.size
+                * settings.sensor_modes
+                * (settings.sensor_modes - 1)
+                // 2,
+            )
+        ),
         cross_score_scale=np.empty(0),
         topography_mean=np.zeros(collection.channel_names.size),
         topography_scale=np.ones(collection.channel_names.size),
         topography_components=np.empty((0, collection.channel_names.size)),
         topography_score_scale=np.empty(0),
+        cross_metric=settings.cross_metric,
         diagonal_shrinkage=settings.diagonal_shrinkage,
         auto_weight=settings.auto_weight,
         cross_weight=settings.cross_weight,
@@ -469,13 +506,22 @@ def fit_spectral_transformer(
             settings.reliability_max_auto_coordinates,
             settings.reliability_min_coordinates,
         )
-        cross_components, cross_reliability = _balanced_complex_components(
-            first_cross,
-            second_cross,
-            settings.reliability_threshold,
-            settings.reliability_max_cross_coordinates,
-            settings.reliability_min_coordinates,
-        )
+        if settings.cross_metric == "complex_coherency":
+            cross_components, cross_reliability = _balanced_complex_components(
+                first_cross,
+                second_cross,
+                settings.reliability_threshold,
+                settings.reliability_max_cross_coordinates,
+                settings.reliability_min_coordinates,
+            )
+        else:
+            cross_components, cross_reliability = _reliable_coordinate_components(
+                first_cross,
+                second_cross,
+                settings.reliability_threshold,
+                settings.reliability_max_cross_coordinates,
+                settings.reliability_min_coordinates,
+            )
         topography_components, topography_reliability = (
             _reliable_coordinate_components(
                 first_topography,
@@ -510,6 +556,7 @@ def fit_spectral_transformer(
         topography_scale=topography_scale,
         topography_components=topography_components,
         topography_score_scale=topography_score_scale,
+        cross_metric=settings.cross_metric,
         diagonal_shrinkage=settings.diagonal_shrinkage,
         auto_weight=settings.auto_weight,
         cross_weight=settings.cross_weight,
@@ -539,8 +586,26 @@ def load_spectral_transformer(path: Path) -> SpectralFeatureTransformer:
         values = {
             name: arrays[name]
             for name in SpectralFeatureTransformer.__dataclass_fields__
-            if name not in {"diagonal_shrinkage", "auto_weight", "cross_weight"}
+            if name in arrays
+            and name
+            not in {
+                "cross_metric",
+                "diagonal_shrinkage",
+                "auto_weight",
+                "cross_weight",
+                "topography_weight",
+            }
         }
-        for name in ("diagonal_shrinkage", "auto_weight", "cross_weight"):
+        for name in (
+            "diagonal_shrinkage",
+            "auto_weight",
+            "cross_weight",
+            "topography_weight",
+        ):
             values[name] = float(arrays[name])
+        values["cross_metric"] = (
+            str(arrays["cross_metric"])
+            if "cross_metric" in arrays
+            else "complex_coherency"
+        )
     return SpectralFeatureTransformer(**values)
