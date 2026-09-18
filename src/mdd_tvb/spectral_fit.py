@@ -13,7 +13,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from .spectral_bank import SpectralSimulationBank, load_spectral_simulation_bank
+from .spectral_bank import (
+    SpectralSimulationBank,
+    load_spectral_simulation_bank,
+    spectral_observation_gain,
+)
 from .spectral_config import SpectralM5Config
 from .spectral_features import (
     CrossSpectralCollection,
@@ -25,7 +29,6 @@ from .spectral_features import (
 )
 from .config import load_config
 from .connectome import load_connectome
-from .eeg import build_eeg_monitor, regularize_analytic_eeg_gain
 from .spectral_parameterization import PARAMETER_NAMES, normalized_spectral_parameters
 
 
@@ -269,19 +272,7 @@ def _source_background_covariance(config: SpectralM5Config) -> np.ndarray:
 
     baseline = load_config(config.paths.baseline_config)
     connectome = load_connectome(baseline.paths, baseline.connectivity)
-    monitor, _ = build_eeg_monitor(
-        baseline.monitor,
-        baseline.connectivity.expected_regions,
-        baseline.simulation.monitor_period_ms,
-    )
-    monitor.configure()
-    regularize_analytic_eeg_gain(
-        monitor,
-        connectome.centres,
-        connectome.connectivity.orientations,
-        baseline.monitor.minimum_source_sensor_distance_mm,
-    )
-    gain = monitor.gain.copy()
+    gain, _ = spectral_observation_gain(config, baseline, connectome)
     reference = baseline.monitor.reference
     if reference:
         if reference.lower() == "average":
@@ -670,6 +661,8 @@ def fit_spectral_subjects(
     bank: SpectralSimulationBank | None = None,
     reliability_first: CrossSpectralCollection | None = None,
     reliability_second: CrossSpectralCollection | None = None,
+    split_indices: tuple[np.ndarray, np.ndarray] | None = None,
+    fit_directory: Path | None = None,
 ) -> pd.DataFrame:
     empirical_dir = config.paths.output_dir / "empirical"
     bank_dir = config.paths.output_dir / "bank"
@@ -692,9 +685,23 @@ def fit_spectral_subjects(
         raise ValueError(
             "Simulation-bank parameter schema differs from the current model"
         )
-    train_indices, holdout_indices = _stratified_split(
-        fitting.groups, config.spectral.holdout_fraction, config.spectral.split_seed
-    )
+    if split_indices is None:
+        train_indices, holdout_indices = _stratified_split(
+            fitting.groups,
+            config.spectral.holdout_fraction,
+            config.spectral.split_seed,
+        )
+    else:
+        train_indices = np.asarray(split_indices[0], dtype=int)
+        holdout_indices = np.asarray(split_indices[1], dtype=int)
+        combined = np.concatenate([train_indices, holdout_indices])
+        if (
+            len(np.unique(combined)) != len(fitting.subject_ids)
+            or set(combined.tolist()) != set(range(len(fitting.subject_ids)))
+        ):
+            raise ValueError(
+                "Explicit train and holdout indices must partition every subject once"
+            )
     source_covariance = _source_background_covariance(config)
     sensor_basis = None
     if config.spectral.sensor_basis_method == "leadfield":
@@ -709,7 +716,7 @@ def fit_spectral_subjects(
         reliability_second,
         sensor_basis=sensor_basis,
     )
-    fit_dir = config.paths.output_dir / "fit"
+    fit_dir = fit_directory or config.paths.output_dir / "fit"
     fit_dir.mkdir(parents=True, exist_ok=True)
     save_spectral_transformer(fit_dir / "spectral_transformer.npz", transformer)
     fit_features = transformer.transform(fitting.csd)

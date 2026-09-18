@@ -26,6 +26,7 @@ from .connectome import ConnectomeBundle
 from .eeg import (
     apply_surface_laplacian,
     build_eeg_monitor,
+    project_regional_psp_to_eeg,
     regularize_analytic_eeg_gain,
 )
 from .heterogeneity import RegionalParameters, build_regional_parameters
@@ -286,6 +287,7 @@ def run_dual_jansen_rit(
     inhibitory_scale: float,
     speed_mm_per_ms: float,
     cross_coupling: float = 0.12,
+    observation_gain: tuple[np.ndarray, dict[str, Any]] | None = None,
 ) -> DualSimulationResult:
     """Run the two-generator model with a matched TVB EEG observation model."""
 
@@ -371,11 +373,30 @@ def run_dual_jansen_rit(
     ) + fast_fraction * (
         region_state[:, 2, :, 0] - region_state[:, 3, :, 0]
     )
-    eeg = alpha_weight * (
-        eeg_state[:, 0, :, 0] - eeg_state[:, 1, :, 0]
-    ) + fast_fraction * (
-        eeg_state[:, 2, :, 0] - eeg_state[:, 3, :, 0]
-    )
+    if observation_gain is None:
+        eeg = alpha_weight * (
+            eeg_state[:, 0, :, 0] - eeg_state[:, 1, :, 0]
+        ) + fast_fraction * (
+            eeg_state[:, 2, :, 0] - eeg_state[:, 3, :, 0]
+        )
+        active_gain = eeg_monitor.gain.copy()
+        observation_audit: dict[str, Any] = {
+            "observation_gain": "analytic_single_sphere",
+            **gain_audit,
+        }
+    else:
+        active_gain, observation_audit = observation_gain
+        if active_gain.shape != (
+            len(config.monitor.channels),
+            config.connectivity.expected_regions,
+        ):
+            raise ValueError("Custom observation gain has incompatible shape")
+        eeg = project_regional_psp_to_eeg(
+            region_psp,
+            active_gain,
+            config.monitor.reference,
+            config.monitor.channels,
+        )
     relative_time = region_time - region_time[0] + sim_cfg.monitor_period_ms
     keep = relative_time > sim_cfg.transient_ms
     time_ms = relative_time[keep] - sim_cfg.transient_ms
@@ -392,7 +413,7 @@ def run_dual_jansen_rit(
         time_ms=time_ms,
         region_psp=region_psp,
         eeg=eeg,
-        gain_matrix=eeg_monitor.gain.copy(),
+        gain_matrix=active_gain,
         channel_names=config.monitor.channels,
         regional_parameters=regional,
         metadata={
@@ -410,6 +431,6 @@ def run_dual_jansen_rit(
             "seed": int(sim_cfg.seed),
             "noise_nsig": float(sim_cfg.noise_nsig),
             "noise_tau_ms": float(sim_cfg.noise_tau_ms),
-            "gain_regularization": gain_audit,
+            "gain_regularization": observation_audit,
         },
     )

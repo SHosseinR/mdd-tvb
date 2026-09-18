@@ -22,6 +22,28 @@ class CrossSpectralCollection:
     csd: np.ndarray
 
 
+def subset_cross_spectral_collection(
+    collection: CrossSpectralCollection, indices: np.ndarray
+) -> CrossSpectralCollection:
+    """Select subjects while preserving all spectral and sensor axes."""
+
+    selected = np.asarray(indices, dtype=int)
+    if selected.ndim != 1 or len(np.unique(selected)) != len(selected):
+        raise ValueError("Subject indices must be a unique one-dimensional array")
+    if len(selected) and (selected.min() < 0 or selected.max() >= len(collection.subject_ids)):
+        raise IndexError("Subject index is outside the collection")
+    return CrossSpectralCollection(
+        subject_ids=collection.subject_ids[selected],
+        groups=collection.groups[selected],
+        source_files=collection.source_files[selected],
+        durations_s=collection.durations_s[selected],
+        epoch_counts=collection.epoch_counts[selected],
+        frequency_hz=collection.frequency_hz.copy(),
+        channel_names=collection.channel_names.copy(),
+        csd=collection.csd[selected],
+    )
+
+
 @dataclass(frozen=True)
 class SpectralFeatureTransformer:
     sensor_basis: np.ndarray

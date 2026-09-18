@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "release": "m5.1-fixed-connectome-production",
+  "created_utc": "2026-09-18T18:44:58.720189+00:00",
+  "repository_head_at_freeze": "7f4d175ccfa9352337417ea250f56b16056c81f7",
+  "repository_branch_at_freeze": "main",
+  "bank_source_commit": "a302fdf",
+  "scientific_status": "not_accepted",
+  "artifact_root": "outputs/m5_spectral_m51_production",
+  "artifact_count": 29,
+  "artifact_bytes": 1887414297,
+  "validation": {
+    "checks": {
+      "source_commit_is_a302fdf": true,
+      "candidate_rows_are_2048": true,
+      "replicate_rows_are_6144": true,
+      "zero_simulation_failures": true,
+      "production_arrays_declared_finite": true,
+      "structural_fitting_disabled": true,
+      "both_structural_columns_fixed_zero": true,
+      "fit_is_production_scale": true,
+      "fit_status_recorded": true
+    },
+    "candidate_rows": 2048,
+    "replicate_rows": 6144,
+    "simulation_failure_rows": 0,
+    "structural_unique_values": {
+      "default_incident_weight_contrast": [
+        0.0
+      ],
+      "dorsattn_salventattn_weight_balance": [
+        0.0
+      ]
+    },
+    "acceptance_gates": {
+      "holdout_unseen_total_cost_below_pooled_null": true,
+      "holdout_majority_of_subjects_beat_pooled_null": true,
+      "holdout_auto_spectrum_cost_below_pooled_null": true,
+      "holdout_selected_connectivity_cost_below_pooled_null": true,
+      "holdout_alpha_topography_cost_below_pooled_null": false,
+      "holdout_power_group_effect_preserved": true,
+      "holdout_alpha_topography_group_effect_preserved": true,
+      "holdout_selected_connectivity_group_effect_preserved": false,
+      "population_observation_nuisance_not_at_boundary": true,
+      "at_least_three_parameters_recoverable_in_synthetic_data": true,
+      "structural_modes_recoverable_or_fixed_from_calibration": true
+    }
+  },
+  "artifacts": [
+    {
+      "path": "configs/m5_spectral.toml",
+      "bytes": 4244,
+      "sha256": "b44171528e1ae796810b510723f20028c1efcfafa8335423d4aaa3c8bf73d2a7"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/bank/backend_metadata.json",
+      "bytes": 499,
+      "sha256": "796f7c63566bd3d3c0053a085dc1fe31d293195c59fa3e1d3375a44228e4e287"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/bank/candidate_parameters.csv",
+      "bytes": 588628,
+      "sha256": "1f2b5a79abb98ddf7c496aea9ee735fb354ed9d0ae2d47cf13faceea0b40b4da"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/bank/replicates.csv",
+      "bytes": 58157,
+      "sha256": "92a56213e1e498e7880c28e949c0d1dbb8d77383ed7e773bc0ba0ee539df15e9"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/bank/simulation_failures.csv",
+      "bytes": 32,
+      "sha256": "b673cab3b2ac48bd1a704c28fca068ec64e143ab6821f723d409c25fb4f143b3"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/bank/spectral_simulation_bank.npz",
+      "bytes": 1471969366,
+      "sha256": "fa6c9eb87a9983484cf9161899bf194b2dc6e4d769870ed8f5ca7e5afbbcbd19"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/cross_spectra_fit.npz",
+      "bytes": 78900908,
+      "sha256": "00099c46a7a2f2a2d38b2e360120508558c0b99ffe23bbff15c714d81857d27e"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/cross_spectra_reliability_a.npz",
+      "bytes": 78840180,
+      "sha256": "f44a7bfda19b3f84c8589527f0d0896d94f79f7c98d52956981008db57cc3387"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/cross_spectra_reliability_b.npz",
+      "bytes": 78839062,
+      "sha256": "0e28121968575727c01da5156dfc7dd90e30608a2561d0e7f8c93b469e9b7d24"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/cross_spectra_validation.npz",
+      "bytes": 78899152,
+      "sha256": "8b66461f95e841a723f0955ea7ed81251e8cbeb806a0cb0cc87f3b5a6ddc71e6"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/extraction_failures.csv",
+      "bytes": 19,
+      "sha256": "6d0f7f728097aa36dde70de86262b8eeeb01e6486e843d5ba3b353cf97e2c398"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/empirical/subjects.csv",
+      "bytes": 58396,
+      "sha256": "15622dcf2e372a641e58a9fcf9d53b6551dcf1fec359938fa459bccaf7a274e9"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/ACCEPTANCE.md",
+      "bytes": 1121,
+      "sha256": "d1cf8c8ce07b83857d306fbf2632b4dca9985b96873df22f6b93f2839c5dd7d1"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/acceptance_report.json",
+      "bytes": 853,
+      "sha256": "e9db2a0027596709fe1a515bf9912afe35aac286fe6019054c3a7e3176c6b75d"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/data_split.csv",
+      "bytes": 8714,
+      "sha256": "973d2ba3a27f0b2600dbe80804f4d2156117d80d99cf53a3e0d933257990fd73"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/descriptive_group_parameter_summary.csv",
+      "bytes": 2547,
+      "sha256": "2c0444a7262179070c23d1e97ba1a8b67301363364a6c57fb0b9ef6a0a68f0ba"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/fit_summary.json",
+      "bytes": 15226,
+      "sha256": "089a23994a98795fe3cb9a1df1a767bbb403578c37c58bbe48eaea3acb24beb0"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/heldout_group_parameter_effects.csv",
+      "bytes": 2397,
+      "sha256": "820f5245835e96b9e9b6a9e2388d091d6cc6731c81e4a72e06eae2fc15f1a06b"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/m5_heldout_parameter_effects.png",
+      "bytes": 106340,
+      "sha256": "df7e13fae3467fcc04e49b314b60a858030658256d09b285b0525737d01fbead"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/m5_spectral_group_effects.png",
+      "bytes": 402330,
+      "sha256": "564db8a4ef46e3f58481afafc4ff4874d349c50e98f93aea7d2643fd942f6031"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/m5_spectral_validation.png",
+      "bytes": 370139,
+      "sha256": "4f82a6e6989abc21721e2988367644b95ddefcc34f156ca465397c71f745f3c5"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/population_calibration_ranking.csv",
+      "bytes": 18115601,
+      "sha256": "8c0c9d9a3ee0959b1802e3c7db84304a97c279150f989710ff6535b4fc0263d5"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/posterior_predictive_csd.npz",
+      "bytes": 78138528,
+      "sha256": "ba0f0ef33c793ce5ec4d6ee9419056510062cfcdfe3462388701609323ebf679"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/spectral_transformer.npz",
+      "bytes": 39684,
+      "sha256": "76ee88677f5d03d7100e63a6f74e86ca468b4c4af4d78cc384d55001b37ca8de"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/subject_posteriors.csv",
+      "bytes": 531410,
+      "sha256": "6f82c65429c8444e7dd548e2d6bf2f726b1ff7e832282f4f4d275f7689638605"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/subject_top_posterior_states.csv",
+      "bytes": 186728,
+      "sha256": "138bf583b697c984f7b93f5259c1dd1450d3f194592f2d744254631f97acc003"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/synthetic_recovery.csv",
+      "bytes": 1332324,
+      "sha256": "5a724c89852f63944cc64fd6fe70df60a512d99a19c3279fccf7fe6e2fa59966"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/fit/training_only_temperature_selection.csv",
+      "bytes": 841,
+      "sha256": "222b4b0e945dedbb7a61b43729aca3442c36afd2e369fe6d9d131d6b88a355e9"
+    },
+    {
+      "path": "outputs/m5_spectral_m51_production/m51_production_summary.json",
+      "bytes": 871,
+      "sha256": "16b797b65700d2346066fbcb432cbd9d912ca6729d5b19f3e297b209d294ca22"
+    }
+  ]
+}

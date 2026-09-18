@@ -12,13 +12,13 @@ import pandas as pd
 
 from .config import load_config
 from .connectome import load_connectome
-from .eeg import build_eeg_monitor, regularize_analytic_eeg_gain
 from .heterogeneity import build_regional_parameters, network_labels
 from .jax_backend import JaxDualBatch, run_dual_jansen_rit_jax
 from .spectral_bank import (
     SpectralSimulationBank,
     build_spectral_run_config,
     connectome_for_spectral_candidate,
+    spectral_observation_gain,
 )
 from .spectral_config import SpectralM5Config
 from .spectral_features import estimate_cross_spectrum
@@ -27,22 +27,6 @@ from .spectral_parameterization import (
     SpectralCandidate,
     make_spectral_design,
 )
-
-
-def _observation_gain(baseline: Any, connectome: Any) -> np.ndarray:
-    monitor, _ = build_eeg_monitor(
-        baseline.monitor,
-        baseline.connectivity.expected_regions,
-        baseline.simulation.monitor_period_ms,
-    )
-    monitor.configure()
-    regularize_analytic_eeg_gain(
-        monitor,
-        connectome.centres,
-        connectome.connectivity.orientations,
-        baseline.monitor.minimum_source_sensor_distance_mm,
-    )
-    return monitor.gain.copy()
 
 
 def _save_bank(
@@ -133,7 +117,7 @@ def build_spectral_simulation_bank_jax(
         for candidate in candidates
         for replicate in range(design.replicates)
     ]
-    gain = _observation_gain(baseline, connectome)
+    gain, gain_metadata = spectral_observation_gain(config, baseline, connectome)
     max_history = int(
         np.rint(
             np.max(connectome.tract_lengths)
@@ -209,7 +193,7 @@ def build_spectral_simulation_bank_jax(
             model_B=baseline.model.B,
             model_J=baseline.model.J,
         )
-        backend_metadata = result.metadata
+        backend_metadata = {**result.metadata, **gain_metadata}
         sfreq_hz = 1000.0 / baseline.simulation.monitor_period_ms
         for local_index, (candidate, replicate) in enumerate(selected):
             eeg = result.eeg[local_index]

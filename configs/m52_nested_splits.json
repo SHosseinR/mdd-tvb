@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "source": "outputs/m5_spectral_m51_production/fit/data_split.csv",
+  "seed": 20260918,
+  "outer_folds": 5,
+  "inner_folds": 4,
+  "development_subjects": 262,
+  "development_groups": {
+    "Healthy": 141,
+    "MDD": 121
+  },
+  "excluded_consumed_m51_holdout_subjects": 65,
+  "outer_validation_counts": [
+    {
+      "outer_fold": 0,
+      "n": 54,
+      "groups": {
+        "Healthy": 29,
+        "MDD": 25
+      }
+    },
+    {
+      "outer_fold": 1,
+      "n": 52,
+      "groups": {
+        "Healthy": 28,
+        "MDD": 24
+      }
+    },
+    {
+      "outer_fold": 2,
+      "n": 52,
+      "groups": {
+        "Healthy": 28,
+        "MDD": 24
+      }
+    },
+    {
+      "outer_fold": 3,
+      "n": 52,
+      "groups": {
+        "Healthy": 28,
+        "MDD": 24
+      }
+    },
+    {
+      "outer_fold": 4,
+      "n": 52,
+      "groups": {
+        "Healthy": 28,
+        "MDD": 24
+      }
+    }
+  ],
+  "rules": [
+    "Only original M5.1 training subjects appear in these folds.",
+    "Original M5.1 holdout subjects remain excluded from M5.2 selection.",
+    "Group labels are used for split balance and post-fit audits, never individual fitting."
+  ]
+}

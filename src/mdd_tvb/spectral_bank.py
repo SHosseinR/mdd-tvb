@@ -14,6 +14,7 @@ import pandas as pd
 from .config import load_config
 from .connectome import load_connectome, with_network_pair_gains
 from .heterogeneity import network_labels
+from .eeg import build_eeg_monitor, regularize_analytic_eeg_gain
 from .multifrequency import run_dual_jansen_rit
 from .spectral_config import SpectralM5Config
 from .spectral_features import estimate_cross_spectrum
@@ -50,6 +51,46 @@ def _inputs(path: str) -> tuple[Any, Any, np.ndarray]:
             network_labels(connectome.region_labels),
         )
     return _CACHE[path]
+
+
+def spectral_observation_gain(
+    config: SpectralM5Config, baseline: Any, connectome: Any
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Load the configured regional EEG gain or build the analytic reference."""
+
+    path = config.paths.observation_gain_file
+    if path is None:
+        monitor, _ = build_eeg_monitor(
+            baseline.monitor,
+            baseline.connectivity.expected_regions,
+            baseline.simulation.monitor_period_ms,
+        )
+        monitor.configure()
+        audit = regularize_analytic_eeg_gain(
+            monitor,
+            connectome.centres,
+            connectome.connectivity.orientations,
+            baseline.monitor.minimum_source_sensor_distance_mm,
+        )
+        return np.asarray(monitor.gain, dtype=float), {
+            "observation_gain": "analytic_single_sphere",
+            **audit,
+        }
+
+    from .template_bem import load_template_bem_gain, sha256
+
+    gain, channel_names, region_names = load_template_bem_gain(path)
+    expected_channels = np.asarray(baseline.monitor.channels).astype(str)
+    expected_regions = np.asarray(connectome.region_labels).astype(str)
+    if not np.array_equal(channel_names.astype(str), expected_channels):
+        raise ValueError("Configured observation gain channel order is incompatible")
+    if not np.array_equal(region_names.astype(str), expected_regions):
+        raise ValueError("Configured observation gain region order is incompatible")
+    return gain, {
+        "observation_gain": "configured_regional_gain",
+        "observation_gain_file": str(path),
+        "observation_gain_sha256": sha256(path),
+    }
 
 
 def _network_contrast_map(
@@ -202,6 +243,11 @@ def simulate_spectral_candidate(
         inhibitory_scale=1.0,
         speed_mm_per_ms=candidate.speed_mm_per_ms,
         cross_coupling=config.design.cross_coupling,
+        observation_gain=(
+            spectral_observation_gain(config, baseline, candidate_connectome)
+            if config.paths.observation_gain_file is not None
+            else None
+        ),
     )
     sfreq_hz = 1000.0 / run_config.simulation.monitor_period_ms
     frequency, csd, epoch_count = estimate_cross_spectrum(

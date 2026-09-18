@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
-analysis = ["scikit-learn>=1.5,<2"]
+analysis = ["scikit-learn>=1.5,<2", "nibabel>=5.2,<6"]
 accelerated = ["jax>=0.7,<0.8"]
 
 [project.scripts]

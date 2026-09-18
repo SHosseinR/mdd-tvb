@@ -14,6 +14,7 @@ class SpectralPaths:
     baseline_config: Path
     dataset_root: Path
     output_dir: Path
+    observation_gain_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,11 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         baseline_config=_resolve(root, paths_raw["baseline_config"]),
         dataset_root=_resolve(root, paths_raw["dataset_root"]),
         output_dir=_resolve(root, paths_raw["output_dir"]),
+        observation_gain_file=(
+            _resolve(root, paths_raw["observation_gain_file"])
+            if paths_raw.get("observation_gain_file")
+            else None
+        ),
     )
     empirical_raw = raw.get("empirical", {})
     empirical = SpectralEmpiricalConfig(

@@ -1,0 +1,48 @@
+{
+  "method": "MNE three-layer fsaverage BEM with fixed cortical-normal sources",
+  "mne_version": "1.13.0",
+  "subject": "fsaverage",
+  "source_space": "fsaverage-ico-5-src.fif",
+  "bem_solution": "fsaverage-5120-5120-5120-bem-sol.fif",
+  "transform": "fsaverage-trans.fif",
+  "conductivity_s_per_m": [
+    0.3,
+    0.006,
+    0.3
+  ],
+  "aggregation": "area-weighted mean of fixed-normal vertex lead fields within each Schaefer parcel; every parcel has equal total source amplitude",
+  "reference": "average",
+  "normalization": "whole-gain RMS set to one; absolute EEG gain is nuisance",
+  "gain_shape": [
+    26,
+    200
+  ],
+  "vertex_gain_shape": [
+    26,
+    20484
+  ],
+  "raw_gain_rms": 32.63451614552081,
+  "rank_after_average_reference": 25,
+  "minimum_vertices_per_parcel": 23,
+  "median_vertices_per_parcel": 88.0,
+  "maximum_vertices_per_parcel": 219,
+  "tdbrain_to_colin27_angular_difference_degrees": {
+    "median": 1.3788173137289155,
+    "maximum": 3.5917303101602216
+  },
+  "hashes": {
+    "coordinate_file": "0d80a75177889e31313ca1a36b336a42c7cacd39c4c6b6d59109d14557e1d820",
+    "atlas_file": "60f08eb38abe1313dc87ddd4ffcfb7c60428769a0304bd66cc46d359dd4e0de9",
+    "lh_annotation": "c225937c31584c74d3e7c8fba7c17916ce4e730faa542ee61659041db136ac87",
+    "rh_annotation": "5439cd1fb913cbb76366f9590b5733efcb7adf9cde25413f6e0b681ff0abdcf8",
+    "source_space": "7e772329b88a5741c824e46dc37678717bba8812a7d9ed09ca66380408ded125",
+    "bem_solution": "ad6a6edd2a3793e7a0d916bafe149690ec9f95e0a591dbeaf86ff5ab2150360f",
+    "transform": "a30002293d88c1a38b5a6998b5287b6dfe60196c6ca7c9e4081faabd77e5010b"
+  },
+  "limitations": [
+    "Template anatomy, not subject-specific anatomy.",
+    "Published electrode coordinates, not individual digitization.",
+    "Regional neural states are represented as uniform parcel source amplitudes.",
+    "Absolute gain is not calibrated to EEG microvolts."
+  ]
+}

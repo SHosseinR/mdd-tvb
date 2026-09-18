@@ -1,0 +1,95 @@
+[paths]
+baseline_config = "configs/baseline.toml"
+dataset_root = "D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1/output/preprocessed_tdbrain_restEC_set2"
+output_dir = "outputs/m52_template_bem_production"
+observation_gain_file = "data/forward/template_bem/template_bem_schaefer200_gain.npz"
+
+[empirical]
+groups = ["Healthy", "MDD"]
+max_duration_s = 120.0
+n_jobs = 4
+apply_surface_laplacian = false
+
+[spectral]
+epoch_seconds = 4.0
+frequency_min_hz = 2.0
+frequency_max_hz = 40.0
+frequency_bin_hz = 1.0
+sensor_modes = 10
+sensor_basis_method = "empirical"
+auto_components = 0
+cross_components = 0
+reliability_threshold = 0.20
+reliability_max_auto_coordinates = 16
+reliability_max_cross_coordinates = 16
+reliability_max_topography_coordinates = 8
+reliability_min_coordinates = 8
+diagonal_shrinkage = 0.05
+cross_metric = "lagged_coherency"
+auto_weight = 0.45
+cross_weight = 0.45
+topography_weight = 0.10
+holdout_fraction = 0.20
+split_seed = 20260913
+
+[design]
+samples = 2048
+strategy = "factorized"
+global_samples = 16
+spatial_samples = 128
+replicates = 3
+duration_ms = 62000.0
+transient_ms = 2000.0
+dt_ms = 0.5
+n_jobs = 6
+seed = 161803
+simulation_seed = 29009
+fit_structural_modes = false
+global_coupling_range = [1.0, 20.0]
+speed_range = [2.0, 12.0]
+mu_range = [0.17, 0.30]
+a_scale_range = [0.65, 1.05]
+b_scale_range = [0.75, 1.20]
+fast_ratio_range = [1.4, 3.0]
+fast_fraction_range = [0.05, 0.55]
+noise_nsig_range = [0.0005, 0.040]
+noise_tau_ms_range = [0.25, 6.0]
+dorsattn_time_contrast_range = [-0.30, 0.30]
+visual_time_contrast_range = [-0.30, 0.30]
+default_noise_contrast_range = [-0.50, 0.50]
+visual_noise_contrast_range = [-0.50, 0.50]
+network_noise_mode_1_range = [-0.35, 0.35]
+network_noise_mode_2_range = [-0.35, 0.35]
+network_noise_mode_1 = { Cont = -0.0809303268, Default = -0.1702062801, DorsAttn = 1.0, Limbic = -0.0531851983, SalVentAttn = -0.6535874656, SomMot = 0.0144111626, Vis = -0.0424084614 }
+network_noise_mode_2 = { Cont = -0.1081241871, Default = -0.0460614625, DorsAttn = -0.3886020185, Limbic = -0.0415940948, SalVentAttn = -0.6295835545, SomMot = 0.0233192201, Vis = 1.0 }
+default_incident_weight_contrast_range = [-0.10, 0.10]
+dorsattn_salventattn_weight_balance_range = [-0.10, 0.10]
+cross_coupling = 0.12
+reference_global_coupling = 7.0
+reference_speed_mm_per_ms = 4.0
+reference_mu = 0.22
+reference_a_scale = 0.80
+reference_b_scale = 0.95
+reference_fast_ratio = 2.2
+reference_fast_fraction = 0.25
+reference_noise_nsig = 0.010
+reference_noise_tau_ms = 1.0
+reference_dorsattn_time_contrast = 0.0
+reference_visual_time_contrast = 0.0
+reference_default_noise_contrast = 0.0
+reference_visual_noise_contrast = 0.0
+reference_network_noise_mode_1 = 0.0
+reference_network_noise_mode_2 = 0.0
+reference_default_incident_weight_contrast = 0.0
+reference_dorsattn_salventattn_weight_balance = 0.0
+
+[posterior]
+observation_noise_fractions = [0.0, 0.20, 0.40, 0.60, 0.80, 0.90]
+observation_noise_exponents = [0.5, 1.0, 1.5, 2.0]
+source_background_fractions = [0.0]
+source_background_exponents = [1.0]
+prior_strength = 0.02
+spatial_prior_strength = 0.05
+structural_prior_strength = 0.0
+temperature_multipliers = [0.005, 0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.0]
+minimum_temperature = 0.0001

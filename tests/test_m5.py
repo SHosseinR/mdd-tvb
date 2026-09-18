@@ -13,13 +13,17 @@ from mdd_tvb.features import extract_eeg_features
 from mdd_tvb.fit_config import load_m5_config
 from mdd_tvb.heterogeneity import network_labels
 from mdd_tvb.parameterization import NETWORK_ORDER, make_design
-from mdd_tvb.spectral_bank import connectome_for_spectral_candidate
+from mdd_tvb.spectral_bank import (
+    connectome_for_spectral_candidate,
+    spectral_observation_gain,
+)
 from mdd_tvb.spectral_config import load_spectral_m5_config
 from mdd_tvb.spectral_features import (
     CrossSpectralCollection,
     add_diagonal_observation_noise,
     estimate_cross_spectrum,
     fit_spectral_transformer,
+    subset_cross_spectral_collection,
 )
 from mdd_tvb.spectral_parameterization import (
     candidates_from_parameter_matrix,
@@ -263,3 +267,38 @@ def test_compact_posterior_csd_matches_dense_state_average() -> None:
         dense.append(value)
     expected = np.einsum("s,sfij->fij", weight, np.stack(dense))
     assert np.allclose(compact, expected)
+
+
+def test_template_bem_gain_matches_model_channel_and_region_order() -> None:
+    config = load_spectral_m5_config(Path("configs/m52_template_bem_pilot.toml"))
+    baseline = load_config(config.paths.baseline_config)
+    connectome = load_connectome(baseline.paths, baseline.connectivity)
+    gain, metadata = spectral_observation_gain(config, baseline, connectome)
+    assert gain.shape == (26, 200)
+    assert np.isfinite(gain).all()
+    assert np.allclose(gain.mean(axis=0), 0.0, atol=1e-12)
+    assert np.isclose(np.sqrt(np.mean(np.square(gain))), 1.0)
+    assert metadata["observation_gain"] == "configured_regional_gain"
+    assert len(metadata["observation_gain_sha256"]) == 64
+
+
+def test_cross_spectral_subset_preserves_sensor_axes_and_rejects_bad_indices() -> None:
+    collection = CrossSpectralCollection(
+        subject_ids=np.asarray(["s0", "s1", "s2"]),
+        groups=np.asarray(["Healthy", "MDD", "Healthy"]),
+        source_files=np.asarray(["a", "b", "c"]),
+        durations_s=np.asarray([10.0, 11.0, 12.0]),
+        epoch_counts=np.asarray([4, 5, 6]),
+        frequency_hz=np.asarray([8.0, 9.0]),
+        channel_names=np.asarray(["Fz", "Cz"]),
+        csd=np.zeros((3, 2, 2, 2), dtype=np.complex128),
+    )
+    selected = subset_cross_spectral_collection(collection, np.asarray([2, 0]))
+    assert selected.subject_ids.tolist() == ["s2", "s0"]
+    assert selected.csd.shape == (2, 2, 2, 2)
+    assert np.array_equal(selected.frequency_hz, collection.frequency_hz)
+    assert np.array_equal(selected.channel_names, collection.channel_names)
+    with np.testing.assert_raises(ValueError):
+        subset_cross_spectral_collection(collection, np.asarray([1, 1]))
+    with np.testing.assert_raises(IndexError):
+        subset_cross_spectral_collection(collection, np.asarray([3]))
