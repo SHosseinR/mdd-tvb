@@ -994,6 +994,9 @@ def fit_spectral_subjects(
     split_summary: dict[str, Any] = {}
     for split in ("train", "holdout"):
         selected = table[table["subject_split"] == split]
+        selected_connectivity_ratio = float(
+            selected["validation_complex_coherency_cost_ratio_to_pooled_null"].median()
+        )
         split_summary[split] = {
             "n": int(len(selected)),
             "median_fit_cost_ratio_to_pooled_null": float(selected["fit_cost_ratio_to_pooled_null"].median()),
@@ -1004,7 +1007,10 @@ def fit_spectral_subjects(
             "median_temporal_persistence_cost_ratio_to_pooled_null": float(selected["temporal_persistence_cost_ratio_to_pooled_null"].median()),
             "median_candidate_posterior_ess": float(selected["posterior_effective_sample_size_candidates"].median()),
             "median_auto_spectrum_validation_cost_ratio_to_pooled_null": float(selected["validation_auto_spectrum_cost_ratio_to_pooled_null"].median()),
-            "median_complex_coherency_validation_cost_ratio_to_pooled_null": float(selected["validation_complex_coherency_cost_ratio_to_pooled_null"].median()),
+            "median_selected_connectivity_validation_cost_ratio_to_pooled_null": selected_connectivity_ratio,
+            # Backward-compatible alias.  The underlying table column predates
+            # support for lagged coherency and is not necessarily complex.
+            "median_complex_coherency_validation_cost_ratio_to_pooled_null": selected_connectivity_ratio,
             "median_alpha_topography_validation_cost_ratio_to_pooled_null": float(selected["validation_alpha_topography_cost_ratio_to_pooled_null"].median()),
         }
 
@@ -1049,9 +1055,9 @@ def fit_spectral_subjects(
             ]
             < 1.0
         ),
-        "holdout_complex_coherency_cost_below_pooled_null": bool(
+        "holdout_selected_connectivity_cost_below_pooled_null": bool(
             holdout_summary[
-                "median_complex_coherency_validation_cost_ratio_to_pooled_null"
+                "median_selected_connectivity_validation_cost_ratio_to_pooled_null"
             ]
             < 1.0
         ),
@@ -1071,7 +1077,7 @@ def fit_spectral_subjects(
             group_effect_metrics.get("alpha_topography_effect_correlation", 0.0)
             >= 0.30
         ),
-        "holdout_coherency_group_effect_preserved": bool(
+        "holdout_selected_connectivity_group_effect_preserved": bool(
             group_effect_metrics.get(
                 "fitted_connectivity_effect_correlation", 0.0
             )
@@ -1108,7 +1114,7 @@ def fit_spectral_subjects(
                     if transformer.auto_components.shape[0]
                     else transformer.auto_mean.size
                 ),
-                "complex_coherency_coordinates": int(
+                "selected_connectivity_coordinates": int(
                     transformer.cross_components.shape[0]
                     if transformer.cross_components.shape[0]
                     else transformer.cross_mean.size
@@ -1244,13 +1250,13 @@ def fit_spectral_subjects(
             f"{holdout_summary['fraction_beating_pooled_null_on_validation']:.1%}"
         ),
         (
-            "- median auto / coherency / alpha-topography ratios: "
+            f"- median auto / {config.spectral.cross_metric.replace('_', ' ')} / alpha-topography ratios: "
             f"{holdout_summary['median_auto_spectrum_validation_cost_ratio_to_pooled_null']:.3f} / "
-            f"{holdout_summary['median_complex_coherency_validation_cost_ratio_to_pooled_null']:.3f} / "
+            f"{holdout_summary['median_selected_connectivity_validation_cost_ratio_to_pooled_null']:.3f} / "
             f"{holdout_summary['median_alpha_topography_validation_cost_ratio_to_pooled_null']:.3f}"
         ),
         (
-            "- power / alpha-topography / coherency group-effect correlations: "
+            f"- power / alpha-topography / {config.spectral.cross_metric.replace('_', ' ')} group-effect correlations: "
             f"{group_effect_metrics.get('channel_frequency_log_power_effect_correlation', np.nan):.3f} / "
             f"{group_effect_metrics.get('alpha_topography_effect_correlation', np.nan):.3f} / "
             f"{group_effect_metrics.get('fitted_connectivity_effect_correlation', np.nan):.3f}"

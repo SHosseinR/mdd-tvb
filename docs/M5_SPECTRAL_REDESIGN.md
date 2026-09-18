@@ -9,10 +9,11 @@ fits, as a second-level descriptive analysis.
 
 The original eight-candidate pilot was genuine underfitting: its prediction of
 the unseen half of each subject was worse than a pooled empirical null. The
-completed 512-candidate production run beats that null for total spectrum and
-power, but it still fails the alpha-topography, complex-coherency group-effect,
-and connectome-recovery gates. Therefore it is not yet an accepted mechanistic
-MDD model and must not be used for TMS target or protocol claims.
+completed 2,048-candidate M5.1 production run beats that null for the total
+objective, autospectra, and lagged coherency. It still narrowly misses the
+alpha-topography fit gate and fails to preserve the held-out lagged-coherency
+Healthy--MDD effect. Therefore it is not yet an accepted mechanistic MDD model
+and must not be used for TMS target or protocol claims.
 
 ## Data split and leakage controls
 
@@ -51,7 +52,7 @@ The subject objective contains three blocks:
 
 1. reliable coordinates from channel-resolved 2--40 Hz periodic residuals and
    aperiodic exponents;
-2. reliable real and imaginary complex-coherency coordinates; and
+2. reliable lagged-coherency coordinates; and
 3. a direct centered 8--13 Hz scalp-topography block.
 
 The declared production weights are 0.45, 0.45, and 0.10. The topography weight
@@ -66,7 +67,7 @@ disease parameter. A boundary optimum is treated as model-mismatch evidence.
 
 ## Parameterization
 
-The finite bank contains 17 parameters:
+The bank stores 17 parameter columns:
 
 - nine global dynamics parameters: coupling, conduction speed, mean drive,
   excitatory and inhibitory time scales, fast-generator ratio and fraction,
@@ -76,25 +77,29 @@ The finite bank contains 17 parameters:
   seven-network noise modes derived by label-blind PCA from training-subject
   alpha-topography variation; and
 - two symmetric, graph-support-preserving network-pair connectome contrasts,
-  bounded to +/-10% and constrained to preserve total weight.
+  bounded to +/-10% and constrained to preserve total weight during
+  calibration, but fixed at zero in production.
 
-The design is a Cartesian product of 16 nine-dimensional global Sobol states
-and 32 eight-dimensional spatial/connectome Sobol states, giving 512 unique
-candidates and one exact reference candidate. The production bank uses three
-stochastic seeds and 60 analysed seconds after a two-second transient.
+Production fits the first 15 columns. Its broad-plus-adaptive design contains
+2,048 unique candidates, three stochastic seeds, and 60 analysed seconds after
+a two-second transient.
 
-The two connectome modes are included because disorder-related coupling may be
-important, but a posterior group difference is not interpreted as tract
-change unless synthetic recovery passes. The current short calibration does
-not recover them.
+The connectome modes were investigated because disorder-related coupling may
+be important. Two diagnosis-blind calibration banks failed their declared
+synthetic-recovery gate, even after broader mode design. Production therefore
+fixes both at zero: resting EEG alone did not support estimating them. This
+does not imply that structural connectivity is irrelevant to MDD; it means
+these particular subject-level structural degrees of freedom were not
+identifiable with this observation model and data.
 
 ## Subject inference and regularization
 
 For each subject, every neural candidate is combined with the declared
 observation-nuisance grid. The squared standardized feature error is augmented
 with quadratic Gaussian penalties on range-normalized parameters. Spatial
-physiology receives additional shrinkage and the two structural modes receive
-the strongest shrinkage. The prior penalty is added to the data objective
+physiology receives additional shrinkage. During structural calibration the
+two connectome modes received the strongest shrinkage; in production they are
+fixed rather than regularized. The prior penalty is added to the data objective
 before temperature scaling:
 
 `weight(state) proportional to exp[-(data_cost + prior_cost)/(2 temperature)]`.
@@ -122,14 +127,15 @@ floor, not as a model competitor.
 `fit/ACCEPTANCE.md` and `fit/acceptance_report.json` require all of the
 following:
 
-- held-out unseen total, autospectral, complex-coherency, and alpha-topography
+- held-out unseen total, autospectral, selected-connectivity, and alpha-topography
   costs below the pooled null;
 - a majority of held-out subjects beating the null;
 - preservation of held-out channel-by-frequency power, alpha-topography, and
-  complex-coherency Healthy--MDD effect directions;
+  selected-connectivity Healthy--MDD effect directions;
 - an interior population observation-nuisance optimum;
 - at least three recoverable parameters in stochastic synthetic recovery; and
-- both +/-10% structural modes recoverable in synthetic data.
+- structural modes either recoverable in synthetic data or explicitly fixed
+  from diagnosis-blind calibration.
 
 Failure of any required gate keeps stimulation optimization blocked. More
 simulation time can reduce Monte Carlo error; it cannot by itself repair a
@@ -152,24 +158,27 @@ it would have increased integration surface without accelerating most work.
 
 ## Production outcome (2026-09-18)
 
-The final bank contains 512 candidates, three stochastic replicates, 39
-frequency bins, and 26 x 26 complex cross-spectra. The GPU simulation took 47.9
-minutes. All outputs were finite and the downloaded bank was validated against
-its declared 367,969,178-byte size and schema before fitting.
+Kaggle notebook version 21 ran repository commit `a302fdf`. The final bank
+contains 2,048 candidates, three stochastic replicates, 39 frequency bins, and
+26 x 26 complex cross-spectra. The GPU simulation took 11,291.2 seconds (about
+3 h 8 min). All outputs were finite, there were zero failed simulations, both
+structural columns were exactly zero, and the downloaded bank was validated
+against its declared 1,471,969,366-byte size and schema before fitting.
 
 On the 65 held-out subjects:
 
-- the median unseen total-cost ratio to the pooled empirical null was 0.851;
-- 64.6% of subjects beat that null;
-- autospectral, coherency, and alpha-topography ratios were 0.515, 0.953, and
-  1.750 respectively; and
-- held-out Healthy--MDD effect correlations were 0.433 for channel-by-frequency
-  power, 0.301 for alpha topography, and -0.115 for complex coherency.
+- the median unseen total-cost ratio to the pooled empirical null was 0.759;
+- 72.3% of subjects beat that null;
+- autospectral, lagged-coherency, and alpha-topography ratios were 0.438,
+  0.997, and 1.046 respectively; and
+- held-out Healthy--MDD effect correlations were 0.447 for channel-by-frequency
+  power, 0.332 for alpha topography, and 0.048 for lagged coherency.
 
-Ten of the 17 parameters passed the declared synthetic-recovery correlation
-threshold, but the two structural modes did not (correlations 0.108 and 0.061).
-The result is therefore `not_accepted`: eight of eleven gates pass. This is a
-large improvement over the original underfit pilot, but it is not sufficient
+All 15 active parameters passed the declared synthetic-recovery correlation
+threshold (range 0.638--0.955). The structural columns were inactive by the
+calibration decision. The result is nevertheless `not_accepted`: nine of
+eleven gates pass. The remaining failures are scientific validation failures,
+not simulation crashes or non-finite results, so the fit is not sufficient
 evidence for individualized TMS targeting.
 
 ## Commands and outputs

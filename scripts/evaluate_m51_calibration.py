@@ -146,7 +146,12 @@ def main() -> None:
             <= float(baseline["nested_unseen_total_cost_ratio"]) * 1.02
         ),
         "nested_cross_improves_old_lagged_bank": bool(
-            nested["median_complex_coherency_validation_cost_ratio_to_pooled_null"]
+            nested.get(
+                "median_selected_connectivity_validation_cost_ratio_to_pooled_null",
+                nested.get(
+                    "median_complex_coherency_validation_cost_ratio_to_pooled_null"
+                ),
+            )
             < float(baseline["nested_unseen_cross_cost_ratio"])
         ),
         "nested_topography_improves_by_five_percent": bool(

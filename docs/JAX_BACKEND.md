@@ -73,11 +73,15 @@ weights and a 125-step delay buffer.
   seconds and produced a finite `256 x 2 x 39 x 26 x 26` bank.
 - A 512-candidate factorized-spatial by two-seed, 12-second bank completed in
   425.8 seconds and produced a finite `512 x 2 x 39 x 26 x 26` bank.
-- The final 512-candidate by three-seed, 62-second production run completed in
-  2876.7 seconds (47.9 minutes). It produced a finite
-  `512 x 3 x 39 x 26 x 26` bank of 367,969,178 bytes, which was downloaded and
-  schema-validated locally before inference.
+- The earlier 512-candidate by three-seed, 62-second production run completed
+  in 2876.7 seconds (47.9 minutes).
+- The final M5.1 fixed-connectome run (notebook version 21, commit `a302fdf`)
+  completed 2,048 candidates by three seeds in 11,291.2 seconds (about 3 h 8
+  min). It produced a finite `2048 x 3 x 39 x 26 x 26` bank of 1,471,969,366
+  bytes with zero failed simulations. The bank was downloaded and
+  schema-validated locally before inference; both inactive structural columns
+  were exactly zero.
 
-The measured production timing agrees with the 45--55 minute stress-test
-estimate. Acceleration does not make an underfitting model scientifically
-valid; the generated `fit/ACCEPTANCE.md` remains authoritative.
+The production timing scales consistently with the earlier 512-candidate run.
+Acceleration does not make an underfitting model scientifically valid; the
+generated `fit/ACCEPTANCE.md` remains authoritative.

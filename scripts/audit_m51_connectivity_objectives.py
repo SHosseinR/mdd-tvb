@@ -138,9 +138,12 @@ def main() -> None:
                 "nested_unseen_auto_cost_ratio": nested[
                     "median_auto_spectrum_validation_cost_ratio_to_pooled_null"
                 ],
-                "nested_unseen_cross_cost_ratio": nested[
-                    "median_complex_coherency_validation_cost_ratio_to_pooled_null"
-                ],
+                "nested_unseen_cross_cost_ratio": nested.get(
+                    "median_selected_connectivity_validation_cost_ratio_to_pooled_null",
+                    nested.get(
+                        "median_complex_coherency_validation_cost_ratio_to_pooled_null"
+                    ),
+                ),
                 "nested_unseen_topography_cost_ratio": nested[
                     "median_alpha_topography_validation_cost_ratio_to_pooled_null"
                 ],

@@ -113,11 +113,13 @@ per parcel, delayed whole-brain coupling, complex 2--40 Hz cross spectra, a
 direct alpha-topography block, explicit periodic/aperiodic separation, and a
 finite-bank posterior with Gaussian shrinkage.
 
-The 17-parameter bank includes nine global dynamics parameters, six structured
-regional-physiology parameters, and two symmetric network-pair connectome modes
-bounded to +/-10%. The latter preserve graph support and total weight and
-receive stronger shrinkage. They are not interpreted as tract changes unless
-their synthetic-recovery gate passes.
+The production bank fits nine global-dynamics and six structured
+regional-physiology parameters. Two additional columns represent symmetric
+network-pair connectome modes bounded to +/-10%, but production fixes both at
+zero. Two diagnosis-blind calibration banks showed that resting scalp EEG did
+not recover these structural perturbations reliably; allowing them to move
+would therefore create prior-driven subject differences rather than measured
+tract changes. The common Schaefer connectome remains the validated reference.
 
 ```powershell
 & .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral.toml
@@ -136,15 +138,16 @@ and the scientific reference; the accelerated path mirrors its delayed
 dual-generator equations, coloured neural noise, temporal averaging, and EEG
 observation model. See `docs/JAX_BACKEND.md`.
 
-The original eight-candidate pilot underfit the unseen data. The revised M5
+The original eight-candidate pilot underfit the unseen data. The revised M5.1
 workflow therefore adds training-only objective/temperature calibration,
-quadratic Gaussian shrinkage, and a factorized 16-global by 32-spatial design.
-The completed production bank is 512 candidates x 3 random seeds x 62 seconds.
-On the 65-subject holdout, its median unseen cost is 0.851 times the pooled-null
-cost and 64.6% of subjects beat that null. It nevertheless passes only 8 of 11
-acceptance gates: alpha-topography fit, coherency group-effect preservation, and
-recovery of both structural modes fail. `fit/ACCEPTANCE.md` is authoritative,
-and stimulation work remains blocked until the required gates pass. See
+quadratic Gaussian shrinkage, and a broad-plus-adaptive 2,048-candidate design.
+The completed production bank uses three random seeds and 62 seconds per
+simulation (two seconds discarded, 60 analysed). On the 65-subject holdout,
+its median unseen cost is 0.759 times the pooled-null cost and 72.3% of subjects
+beat that null. It passes 9 of 11 acceptance gates. Alpha-topography prediction
+is narrowly worse than the null (1.046), and the held-out lagged-coherency group
+effect is not preserved (r=0.048). `fit/ACCEPTANCE.md` is authoritative, and
+stimulation work remains blocked until the required gates pass. See
 `docs/M5_SPECTRAL_REDESIGN.md` for the estimand, leakage controls,
 metrics, outputs, and limitations. The validation and group-effect figures use
 subject holdouts only; the held-out parameter-effect figure fades parameters
