@@ -21,6 +21,7 @@ from mdd_tvb.spectral_features import (
     fit_spectral_transformer,
 )
 from mdd_tvb.spectral_parameterization import make_spectral_design
+from mdd_tvb.spectral_fit import _posterior_csd
 
 
 def test_m5_config_and_bounded_design() -> None:
@@ -139,5 +140,56 @@ def test_spectral_transform_and_design_are_bounded() -> None:
     transformer = fit_spectral_transformer(collection, np.arange(8), reduced)
     features = transformer.transform(collection.csd)
     noisy = add_diagonal_observation_noise(collection.csd[:1], frequency, 0.3, 1.0)
-    assert features.shape == (8, 7 + 7)
+    # Seven spectral and seven complex-CSD components plus the explicit
+    # 26-channel relative alpha topography block.
+    assert features.shape == (8, 7 + 7 + 26)
     assert np.isfinite(transformer.transform(noisy)).all()
+
+
+def test_factorized_design_repeats_global_and_spatial_subdesigns() -> None:
+    config = load_spectral_m5_config(Path("configs/m5_spectral_pilot.toml"))
+    settings = replace(
+        config.design,
+        samples=32,
+        strategy="factorized",
+        global_samples=4,
+        spatial_samples=8,
+    )
+    matrix = np.stack(
+        [candidate.numeric_vector() for candidate in make_spectral_design(settings)]
+    )
+    assert matrix.shape == (32, 17)
+    assert np.unique(matrix[:, :9], axis=0).shape[0] == 4
+    assert np.unique(matrix[:, 9:], axis=0).shape[0] == 8
+    assert np.allclose(matrix[0, :9], matrix[1, :9])
+    assert np.allclose(matrix[0, 9:], matrix[8, 9:])
+
+
+def test_compact_posterior_csd_matches_dense_state_average() -> None:
+    rng = np.random.default_rng(31)
+    base = rng.normal(size=(3, 4, 5, 5)) + 1j * rng.normal(size=(3, 4, 5, 5))
+    base = 0.5 * (base + np.conjugate(base.swapaxes(-1, -2)))
+    candidate = np.asarray([0, 0, 1, 1, 2, 2])
+    diagonal = rng.uniform(0.0, 0.2, size=(6, 4, 5))
+    source_power = rng.uniform(0.0, 0.1, size=(6, 4))
+    source_covariance = rng.normal(size=(5, 5))
+    source_covariance = source_covariance @ source_covariance.T
+    weight = rng.uniform(size=6)
+    weight /= weight.sum()
+    expanded = {
+        "candidate_index": candidate,
+        "candidate_csd": base,
+        "diagonal_noise": diagonal,
+        "source_power": source_power,
+        "source_covariance": source_covariance,
+    }
+    compact = _posterior_csd(weight, expanded)
+    dense = []
+    indices = np.arange(5)
+    for state, candidate_index in enumerate(candidate):
+        value = base[candidate_index].copy()
+        value[..., indices, indices] += diagonal[state]
+        value += source_power[state, :, None, None] * source_covariance
+        dense.append(value)
+    expected = np.einsum("s,sfij->fij", weight, np.stack(dense))
+    assert np.allclose(compact, expected)

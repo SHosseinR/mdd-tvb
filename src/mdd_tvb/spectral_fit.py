@@ -18,11 +18,14 @@ from .spectral_config import SpectralM5Config
 from .spectral_features import (
     CrossSpectralCollection,
     SpectralFeatureTransformer,
-    add_diagonal_observation_noise,
+    add_observation_backgrounds,
     fit_spectral_transformer,
     load_cross_spectral_collection,
     save_spectral_transformer,
 )
+from .config import load_config
+from .connectome import load_connectome
+from .eeg import build_eeg_monitor, regularize_analytic_eeg_gain
 from .spectral_parameterization import PARAMETER_NAMES, normalized_spectral_parameters
 
 
@@ -45,6 +48,86 @@ def _softmax(log_weight: np.ndarray) -> np.ndarray:
     shifted = log_weight - np.max(log_weight)
     weight = np.exp(shifted)
     return weight / weight.sum()
+
+
+def _posterior_weight(
+    data_cost: np.ndarray, prior_cost: np.ndarray, temperature: float
+) -> np.ndarray:
+    """Return a regularized finite-bank kernel posterior.
+
+    ``prior_cost`` is deliberately part of the penalized objective before
+    tempering.  This gives the Gaussian shrinkage terms the same meaning for
+    every cross-validated temperature and prevents them from disappearing as
+    the kernel becomes sharper.
+    """
+
+    if temperature <= 0.0:
+        raise ValueError("temperature must be positive")
+    return _softmax(-0.5 * (np.asarray(data_cost) + prior_cost) / temperature)
+
+
+def _select_temperature(
+    state_features: np.ndarray,
+    state_mean: np.ndarray,
+    fit_features: np.ndarray,
+    validation_features: np.ndarray,
+    train_indices: np.ndarray,
+    pooled_feature: np.ndarray,
+    prior_cost: np.ndarray,
+    base_temperature: float,
+    multipliers: tuple[float, ...],
+    minimum_temperature: float,
+) -> tuple[float, pd.DataFrame]:
+    """Select one global kernel temperature without touching held-out subjects."""
+
+    temperatures = np.unique(
+        np.maximum(
+            minimum_temperature,
+            base_temperature * np.asarray(multipliers, dtype=float),
+        )
+    )
+    rows: list[dict[str, float]] = []
+    for temperature in temperatures:
+        ratios: list[float] = []
+        for subject_index in train_indices:
+            residual = (
+                state_features
+                - fit_features[subject_index][np.newaxis, np.newaxis, :]
+            )
+            data_cost = np.mean(np.sum(residual**2, axis=2), axis=1)
+            weight = _posterior_weight(data_cost, prior_cost, float(temperature))
+            prediction = weight @ state_mean
+            numerator = float(
+                np.sum((prediction - validation_features[subject_index]) ** 2)
+            )
+            denominator = float(
+                np.sum((pooled_feature - validation_features[subject_index]) ** 2)
+            )
+            ratios.append(numerator / denominator if denominator > 0.0 else np.nan)
+        ratio_array = np.asarray(ratios)
+        rows.append(
+            {
+                "temperature": float(temperature),
+                "temperature_multiplier": float(temperature / base_temperature),
+                "training_unseen_median_cost_ratio_to_pooled_null": float(
+                    np.nanmedian(ratio_array)
+                ),
+                "training_unseen_mean_cost_ratio_to_pooled_null": float(
+                    np.nanmean(ratio_array)
+                ),
+                "training_unseen_fraction_beating_pooled_null": float(
+                    np.nanmean(ratio_array < 1.0)
+                ),
+            }
+        )
+    table = pd.DataFrame(rows).sort_values(
+        [
+            "training_unseen_median_cost_ratio_to_pooled_null",
+            "training_unseen_mean_cost_ratio_to_pooled_null",
+        ],
+        kind="stable",
+    )
+    return float(table.iloc[0]["temperature"]), table
 
 
 def _weighted_quantile(
@@ -97,32 +180,191 @@ def _expand_bank(
     config: SpectralM5Config,
     transformer: SpectralFeatureTransformer,
     bank: SpectralSimulationBank,
+    source_covariance: np.ndarray,
 ) -> dict[str, np.ndarray]:
     feature_rows: list[np.ndarray] = []
-    csd_rows: list[np.ndarray] = []
+    diagonal_rows: list[np.ndarray] = []
     candidate_indices: list[int] = []
     fractions: list[float] = []
     exponents: list[float] = []
+    source_fractions: list[float] = []
+    source_exponents: list[float] = []
+    source_power_rows: list[np.ndarray] = []
     for candidate_index in range(len(bank.parameters)):
         for fraction in config.posterior.observation_noise_fractions:
             for exponent in config.posterior.observation_noise_exponents:
-                adjusted = add_diagonal_observation_noise(
-                    bank.csd_replicates[candidate_index],
-                    bank.frequency_hz,
-                    fraction,
-                    exponent,
-                )
-                feature_rows.append(transformer.transform(adjusted))
-                csd_rows.append(adjusted.mean(axis=0))
-                candidate_indices.append(candidate_index)
-                fractions.append(fraction)
-                exponents.append(exponent)
+                for source_fraction in config.posterior.source_background_fractions:
+                    for source_exponent in config.posterior.source_background_exponents:
+                        adjusted, diagonal_increment, source_power = add_observation_backgrounds(
+                            bank.csd_replicates[candidate_index],
+                            bank.frequency_hz,
+                            fraction,
+                            exponent,
+                            source_fraction,
+                            source_exponent,
+                            source_covariance,
+                        )
+                        feature_rows.append(transformer.transform(adjusted))
+                        # Compact increments avoid a dense CSD per nuisance state.
+                        diagonal_rows.append(diagonal_increment.mean(axis=0))
+                        source_power_rows.append(source_power.mean(axis=0))
+                        candidate_indices.append(candidate_index)
+                        fractions.append(fraction)
+                        exponents.append(exponent)
+                        source_fractions.append(source_fraction)
+                        source_exponents.append(source_exponent)
     return {
         "features": np.stack(feature_rows),
-        "csd": np.stack(csd_rows),
+        "candidate_csd": bank.csd_replicates.mean(axis=1),
+        "diagonal_noise": np.stack(diagonal_rows),
+        "source_power": np.stack(source_power_rows),
+        "source_covariance": source_covariance,
         "candidate_index": np.asarray(candidate_indices, dtype=int),
         "observation_noise_fraction": np.asarray(fractions),
         "observation_noise_exponent": np.asarray(exponents),
+        "source_background_fraction": np.asarray(source_fractions),
+        "source_background_exponent": np.asarray(source_exponents),
+    }
+
+
+def _posterior_csd(weight: np.ndarray, expanded: dict[str, np.ndarray]) -> np.ndarray:
+    """Reconstruct a posterior CSD without expanding every dense state CSD."""
+
+    candidate_weight = np.bincount(
+        expanded["candidate_index"],
+        weights=weight,
+        minlength=len(expanded["candidate_csd"]),
+    )
+    prediction = np.einsum(
+        "c,cfij->fij", candidate_weight, expanded["candidate_csd"], optimize=True
+    )
+    diagonal = np.einsum(
+        "s,sfc->fc", weight, expanded["diagonal_noise"], optimize=True
+    )
+    indices = np.arange(prediction.shape[-1])
+    prediction[..., indices, indices] += diagonal
+    source_power = np.einsum(
+        "s,sf->f", weight, expanded["source_power"], optimize=True
+    )
+    prediction += source_power[:, None, None] * expanded["source_covariance"]
+    return prediction
+
+
+def _source_background_covariance(config: SpectralM5Config) -> np.ndarray:
+    """Fixed group-blind covariance of independent parcels through the lead field."""
+
+    baseline = load_config(config.paths.baseline_config)
+    connectome = load_connectome(baseline.paths, baseline.connectivity)
+    monitor, _ = build_eeg_monitor(
+        baseline.monitor,
+        baseline.connectivity.expected_regions,
+        baseline.simulation.monitor_period_ms,
+    )
+    monitor.configure()
+    regularize_analytic_eeg_gain(
+        monitor,
+        connectome.centres,
+        connectome.connectivity.orientations,
+        baseline.monitor.minimum_source_sensor_distance_mm,
+    )
+    gain = monitor.gain.copy()
+    reference = baseline.monitor.reference
+    if reference:
+        if reference.lower() == "average":
+            gain -= gain.mean(axis=0, keepdims=True)
+        else:
+            gain -= gain[baseline.monitor.channels.index(reference)][None, :]
+    covariance = gain @ gain.T
+    covariance = 0.5 * (covariance + covariance.T)
+    covariance /= np.mean(np.diag(covariance))
+    return covariance
+
+
+def _synthetic_recovery(
+    config: SpectralM5Config,
+    bank: SpectralSimulationBank,
+    expanded: dict[str, np.ndarray],
+    prior_cost: np.ndarray,
+    temperature: float,
+    output_path: Path,
+) -> dict[str, Any]:
+    """Recover held-out simulation seeds using the remaining bank seeds."""
+
+    features = expanded["features"]
+    if features.shape[1] < 2:
+        return {"status": "not_run", "reason": "at least two seeds are required"}
+    recovery_mean = features[:, 1:].mean(axis=1)
+    fractions = expanded["observation_noise_fraction"]
+    exponents = expanded["observation_noise_exponent"]
+    target_fraction = min(
+        config.posterior.observation_noise_fractions, key=lambda value: abs(value - 0.5)
+    )
+    target_exponent = min(
+        config.posterior.observation_noise_exponents, key=lambda value: abs(value - 1.0)
+    )
+    target_source_fraction = min(
+        config.posterior.source_background_fractions,
+        key=lambda value: abs(value - 0.5),
+    )
+    target_source_exponent = min(
+        config.posterior.source_background_exponents,
+        key=lambda value: abs(value - 1.0),
+    )
+    normalized = normalized_spectral_parameters(bank.parameters, config.design)
+    state_parameters = normalized[expanded["candidate_index"]]
+    rows: list[dict[str, Any]] = []
+    recovered: list[np.ndarray] = []
+    truths: list[np.ndarray] = []
+    for candidate_index in range(len(bank.parameters)):
+        matches = np.flatnonzero(
+            (expanded["candidate_index"] == candidate_index)
+            & np.isclose(fractions, target_fraction)
+            & np.isclose(exponents, target_exponent)
+            & np.isclose(
+                expanded["source_background_fraction"], target_source_fraction
+            )
+            & np.isclose(
+                expanded["source_background_exponent"], target_source_exponent
+            )
+        )
+        if matches.size != 1:
+            raise RuntimeError("Synthetic recovery state is not unique")
+        target = features[int(matches[0]), 0]
+        cost = np.sum((recovery_mean - target) ** 2, axis=1)
+        weight = _posterior_weight(cost, prior_cost, temperature)
+        estimate = weight @ state_parameters
+        truth = normalized[candidate_index]
+        recovered.append(estimate)
+        truths.append(truth)
+        row: dict[str, Any] = {
+            "candidate_index": candidate_index,
+            "normalized_parameter_rmse": float(np.sqrt(np.mean((estimate - truth) ** 2))),
+            "posterior_effective_sample_size_states": float(1.0 / np.sum(weight**2)),
+        }
+        for column, name in enumerate(PARAMETER_NAMES):
+            row[f"{name}_truth_normalized"] = float(truth[column])
+            row[f"{name}_posterior_mean_normalized"] = float(estimate[column])
+        rows.append(row)
+    table = pd.DataFrame(rows)
+    table.to_csv(output_path, index=False)
+    truth_matrix = np.stack(truths)
+    estimate_matrix = np.stack(recovered)
+    correlations = {
+        name: _safe_correlation(truth_matrix[:, column], estimate_matrix[:, column])
+        for column, name in enumerate(PARAMETER_NAMES)
+    }
+    return {
+        "status": "completed",
+        "fit_seed": 0,
+        "bank_seeds_used_for_prediction": int(features.shape[1] - 1),
+        "observation_noise_fraction": float(target_fraction),
+        "observation_noise_exponent": float(target_exponent),
+        "source_background_fraction": float(target_source_fraction),
+        "source_background_exponent": float(target_source_exponent),
+        "median_normalized_parameter_rmse": float(
+            np.median(table["normalized_parameter_rmse"])
+        ),
+        "parameter_recovery_correlations": correlations,
     }
 
 
@@ -138,31 +380,46 @@ def _plot_validation(
     validation: CrossSpectralCollection,
     predictions: np.ndarray,
     table: pd.DataFrame,
+    holdout_indices: np.ndarray,
 ) -> None:
     groups = list(dict.fromkeys(fitting.groups.astype(str).tolist()))
     colors = {group: f"C{index}" for index, group in enumerate(groups)}
+    holdout_indices = np.asarray(holdout_indices, dtype=int)
+    holdout_mask = np.zeros(len(fitting.subject_ids), dtype=bool)
+    holdout_mask[holdout_indices] = True
     frequency = fitting.frequency_hz
     fit_power = _channel_log_power(fitting.csd).mean(axis=2)
     validation_power = _channel_log_power(validation.csd).mean(axis=2)
     prediction_power = _channel_log_power(predictions).mean(axis=2)
     fig, axes = plt.subplots(2, 2, figsize=(15, 10), constrained_layout=True)
     for group in groups:
-        mask = fitting.groups == group
+        mask = (fitting.groups == group) & holdout_mask
         axes[0, 0].plot(frequency, fit_power[mask].mean(axis=0), color=colors[group], label=f"{group} empirical fit")
         axes[0, 0].plot(frequency, prediction_power[mask].mean(axis=0), color=colors[group], linestyle="--", label=f"{group} posterior prediction")
         axes[0, 1].plot(frequency, validation_power[mask].mean(axis=0), color=colors[group], label=f"{group} empirical unseen")
         axes[0, 1].plot(frequency, prediction_power[mask].mean(axis=0), color=colors[group], linestyle="--", label=f"{group} same prediction")
-        selected = table[table["group"] == group]
-        axes[1, 0].scatter(
-            selected["fit_cost_ratio_to_pooled_null"],
-            selected["validation_cost_ratio_to_pooled_null"],
-            s=18,
-            alpha=0.65,
-            color=colors[group],
-            label=group,
-        )
-    axes[0, 0].set_title("First half: channel-resolved spectral fit")
-    axes[0, 1].set_title("Second half: genuinely unseen within-subject EEG")
+        for split, marker, size, alpha in (
+            ("train", "o", 16, 0.40),
+            ("holdout", "D", 28, 0.85),
+        ):
+            selected = table[
+                (table["group"] == group) & (table["subject_split"] == split)
+            ]
+            axes[1, 0].scatter(
+                selected["fit_cost_ratio_to_pooled_null"],
+                selected["validation_cost_ratio_to_pooled_null"],
+                s=size,
+                alpha=alpha,
+                marker=marker,
+                color=colors[group],
+                edgecolors="black" if split == "holdout" else "none",
+                linewidths=0.4,
+                label=f"{group} {split}",
+            )
+    axes[0, 0].set_title("Subject holdout, first half: individual spectral fit")
+    axes[0, 1].set_title(
+        "Subject holdout, second half: untouched individual validation"
+    )
     for axis in axes[0]:
         axis.set_xlabel("Frequency (Hz)")
         axis.set_ylabel("Centered mean log power")
@@ -172,19 +429,29 @@ def _plot_validation(
     axes[1, 0].set_xlabel("Fit cost / pooled empirical null")
     axes[1, 0].set_ylabel("Unseen cost / pooled empirical null")
     axes[1, 0].set_title("Each point is one independently fitted subject")
-    axes[1, 0].legend()
+    axes[1, 0].legend(fontsize=8)
 
     if len(groups) == 2:
-        actual = _group_difference(validation_power, validation.groups, groups[0], groups[1])
-        predicted = _group_difference(prediction_power, fitting.groups, groups[0], groups[1])
+        selected_groups = validation.groups[holdout_indices]
+        actual = _group_difference(
+            validation_power[holdout_indices], selected_groups, groups[0], groups[1]
+        )
+        predicted = _group_difference(
+            prediction_power[holdout_indices], selected_groups, groups[0], groups[1]
+        )
         axes[1, 1].scatter(actual.ravel(), predicted.ravel(), s=10, alpha=0.5)
         correlation = _safe_correlation(actual, predicted)
-        axes[1, 1].set_title(f"Unseen group spectral effect preservation: r={correlation:.3f}")
+        axes[1, 1].set_title(
+            f"Subject-holdout unseen channel-mean spectral effect: r={correlation:.3f}"
+        )
         axes[1, 1].set_xlabel(f"Empirical {groups[1]} - {groups[0]}")
         axes[1, 1].set_ylabel("Posterior-predicted difference")
     else:
         axes[1, 1].axis("off")
-    fig.suptitle("M5 spectral posterior validation (group labels used only after fitting)", fontsize=14)
+    fig.suptitle(
+        "M5 spectral posterior validation (group labels used only after fitting)",
+        fontsize=14,
+    )
     temporary = path.with_name(f".{path.stem}.tmp{path.suffix}")
     fig.savefig(temporary, dpi=170)
     plt.close(fig)
@@ -258,21 +525,129 @@ def _plot_group_effects(
     return metrics
 
 
+def _plot_heldout_parameter_effects(
+    path: Path,
+    table: pd.DataFrame,
+    groups: tuple[str, ...],
+    recovery_correlations: dict[str, float],
+    seed: int,
+) -> pd.DataFrame:
+    """Report diagnosis effects only after fitting, with recovery guardrails."""
+
+    selected = table[table["subject_split"] == "holdout"]
+    if len(groups) != 2:
+        return pd.DataFrame()
+    first, second = groups
+    rng = np.random.default_rng(seed)
+
+    def standardized_difference(first_values: np.ndarray, second_values: np.ndarray) -> float:
+        denominator_dof = len(first_values) + len(second_values) - 2
+        if denominator_dof <= 0:
+            return np.nan
+        pooled_variance = (
+            (len(first_values) - 1) * np.var(first_values, ddof=1)
+            + (len(second_values) - 1) * np.var(second_values, ddof=1)
+        ) / denominator_dof
+        if pooled_variance <= np.finfo(float).tiny:
+            return np.nan
+        return float(
+            (np.mean(second_values) - np.mean(first_values))
+            / np.sqrt(pooled_variance)
+        )
+
+    rows: list[dict[str, Any]] = []
+    structural = {
+        "default_dorsattn_weight_contrast",
+        "default_salventattn_weight_contrast",
+    }
+    for name in PARAMETER_NAMES:
+        column = f"{name}_posterior_mean"
+        first_values = selected.loc[selected["group"] == first, column].to_numpy()
+        second_values = selected.loc[selected["group"] == second, column].to_numpy()
+        bootstrapped = np.asarray(
+            [
+                standardized_difference(
+                    rng.choice(first_values, size=len(first_values), replace=True),
+                    rng.choice(second_values, size=len(second_values), replace=True),
+                )
+                for _ in range(1000)
+            ]
+        )
+        recovery = float(recovery_correlations.get(name, np.nan))
+        threshold = 0.30 if name in structural else 0.50
+        rows.append(
+            {
+                "parameter": name,
+                "contrast": f"{second} - {first}",
+                "n_first": int(len(first_values)),
+                "n_second": int(len(second_values)),
+                "raw_posterior_mean_difference": float(
+                    np.mean(second_values) - np.mean(first_values)
+                ),
+                "standardized_posterior_mean_difference": standardized_difference(
+                    first_values, second_values
+                ),
+                "bootstrap_ci_low": float(np.nanquantile(bootstrapped, 0.025)),
+                "bootstrap_ci_high": float(np.nanquantile(bootstrapped, 0.975)),
+                "synthetic_recovery_correlation": recovery,
+                "recovery_threshold": threshold,
+                "passes_recovery_gate": bool(recovery >= threshold),
+            }
+        )
+    result = pd.DataFrame(rows)
+    y = np.arange(len(result))
+    estimate = result["standardized_posterior_mean_difference"].to_numpy()
+    lower = result["bootstrap_ci_low"].to_numpy()
+    upper = result["bootstrap_ci_high"].to_numpy()
+    passed = result["passes_recovery_gate"].to_numpy(dtype=bool)
+    fig, axis = plt.subplots(figsize=(10, 8), constrained_layout=True)
+    for mask, color, alpha, label in (
+        (passed, "C0", 0.95, "passes synthetic-recovery gate"),
+        (~passed, "0.55", 0.45, "fails synthetic-recovery gate"),
+    ):
+        axis.errorbar(
+            estimate[mask],
+            y[mask],
+            xerr=np.vstack((estimate[mask] - lower[mask], upper[mask] - estimate[mask])),
+            fmt="o",
+            color=color,
+            alpha=alpha,
+            capsize=2,
+            label=label,
+        )
+    axis.axvline(0.0, color="black", linestyle=":")
+    axis.set_yticks(y)
+    axis.set_yticklabels(result["parameter"])
+    axis.invert_yaxis()
+    axis.set_xlabel(f"Standardized posterior-mean difference ({second} - {first})")
+    axis.set_title(
+        "Subject-holdout parameter effects—descriptive, not diagnosis fitting"
+    )
+    axis.legend(fontsize=8)
+    temporary = path.with_name(f".{path.stem}.tmp{path.suffix}")
+    fig.savefig(temporary, dpi=170)
+    plt.close(fig)
+    temporary.replace(path)
+    return result
+
+
 def fit_spectral_subjects(
     config: SpectralM5Config,
     fitting: CrossSpectralCollection | None = None,
     validation: CrossSpectralCollection | None = None,
     bank: SpectralSimulationBank | None = None,
+    reliability_first: CrossSpectralCollection | None = None,
+    reliability_second: CrossSpectralCollection | None = None,
 ) -> pd.DataFrame:
     empirical_dir = config.paths.output_dir / "empirical"
     bank_dir = config.paths.output_dir / "bank"
     fitting = fitting or load_cross_spectral_collection(empirical_dir / "cross_spectra_fit.npz")
     validation = validation or load_cross_spectral_collection(empirical_dir / "cross_spectra_validation.npz")
     bank = bank or load_spectral_simulation_bank(bank_dir / "spectral_simulation_bank.npz")
-    reliability_first = load_cross_spectral_collection(
+    reliability_first = reliability_first or load_cross_spectral_collection(
         empirical_dir / "cross_spectra_reliability_a.npz"
     )
-    reliability_second = load_cross_spectral_collection(
+    reliability_second = reliability_second or load_cross_spectral_collection(
         empirical_dir / "cross_spectra_reliability_b.npz"
     )
     if not np.array_equal(fitting.subject_ids, validation.subject_ids):
@@ -281,39 +656,97 @@ def fit_spectral_subjects(
         raise ValueError("Empirical and simulated frequency grids differ")
     if not np.array_equal(fitting.channel_names, bank.channel_names):
         raise ValueError("Empirical and simulated channel orders differ")
+    if tuple(bank.parameter_names.astype(str)) != PARAMETER_NAMES:
+        raise ValueError(
+            "Simulation-bank parameter schema differs from the current model"
+        )
     train_indices, holdout_indices = _stratified_split(
         fitting.groups, config.spectral.holdout_fraction, config.spectral.split_seed
     )
+    source_covariance = _source_background_covariance(config)
+    sensor_basis = None
+    if config.spectral.sensor_basis_method == "leadfield":
+        eigenvalues, eigenvectors = np.linalg.eigh(source_covariance)
+        order = np.argsort(eigenvalues)[::-1]
+        sensor_basis = eigenvectors[:, order[: config.spectral.sensor_modes]]
     transformer = fit_spectral_transformer(
         fitting,
         train_indices,
         config.spectral,
         reliability_first,
         reliability_second,
+        sensor_basis=sensor_basis,
     )
     fit_dir = config.paths.output_dir / "fit"
     fit_dir.mkdir(parents=True, exist_ok=True)
     save_spectral_transformer(fit_dir / "spectral_transformer.npz", transformer)
     fit_features = transformer.transform(fitting.csd)
     validation_features = transformer.transform(validation.csd)
-    expanded = _expand_bank(config, transformer, bank)
+    expanded = _expand_bank(config, transformer, bank, source_covariance)
     state_features = expanded["features"]
     state_mean = state_features.mean(axis=1)
     empirical_repeat_cost = np.sum(
         (fit_features[train_indices] - validation_features[train_indices]) ** 2,
         axis=1,
     )
-    temperature = max(
-        config.posterior.minimum_temperature,
-        float(np.median(empirical_repeat_cost)),
-    )
+    base_temperature = float(np.median(empirical_repeat_cost))
     pooled_feature = fit_features[train_indices].mean(axis=0)
     normalized = normalized_spectral_parameters(bank.parameters, config.design)
     neural_state_parameters = normalized[expanded["candidate_index"]]
     prior_cost = config.posterior.prior_strength * np.mean(neural_state_parameters**2, axis=1)
+    spatial_columns = [
+        PARAMETER_NAMES.index(name)
+        for name in (
+            "dorsattn_time_contrast",
+            "visual_time_contrast",
+            "default_noise_contrast",
+            "visual_noise_contrast",
+            "network_noise_mode_1",
+            "network_noise_mode_2",
+        )
+    ]
+    structural_columns = [
+        PARAMETER_NAMES.index(name)
+        for name in (
+            "default_dorsattn_weight_contrast",
+            "default_salventattn_weight_contrast",
+        )
+    ]
+    prior_cost += config.posterior.spatial_prior_strength * np.mean(
+        neural_state_parameters[:, spatial_columns] ** 2, axis=1
+    )
+    prior_cost += config.posterior.structural_prior_strength * np.mean(
+        neural_state_parameters[:, structural_columns] ** 2, axis=1
+    )
+
+    temperature, temperature_table = _select_temperature(
+        state_features,
+        state_mean,
+        fit_features,
+        validation_features,
+        train_indices,
+        pooled_feature,
+        prior_cost,
+        base_temperature,
+        config.posterior.temperature_multipliers,
+        config.posterior.minimum_temperature,
+    )
+    temperature_table.to_csv(
+        fit_dir / "training_only_temperature_selection.csv", index=False
+    )
+
+    recovery_summary = _synthetic_recovery(
+        config,
+        bank,
+        expanded,
+        prior_cost,
+        temperature,
+        fit_dir / "synthetic_recovery.csv",
+    )
 
     population_cost = np.sum((state_mean - pooled_feature) ** 2, axis=1)
-    population_order = np.argsort(population_cost)
+    population_penalized_cost = population_cost + prior_cost
+    population_order = np.argsort(population_penalized_cost)
     population_rows: list[dict[str, Any]] = []
     for rank, state in enumerate(population_order, start=1):
         candidate_index = int(expanded["candidate_index"][state])
@@ -321,8 +754,14 @@ def fit_spectral_subjects(
             "rank": rank,
             "candidate_index": candidate_index,
             "pooled_training_feature_cost": float(population_cost[state]),
+            "pooled_training_penalized_cost": float(
+                population_penalized_cost[state]
+            ),
+            "gaussian_prior_cost": float(prior_cost[state]),
             "observation_noise_fraction": float(expanded["observation_noise_fraction"][state]),
             "observation_noise_exponent": float(expanded["observation_noise_exponent"][state]),
+            "source_background_fraction": float(expanded["source_background_fraction"][state]),
+            "source_background_exponent": float(expanded["source_background_exponent"][state]),
         }
         row.update(
             {
@@ -339,11 +778,11 @@ def fit_spectral_subjects(
     for subject_index, subject_id in enumerate(fitting.subject_ids.astype(str)):
         residual = state_features - fit_features[subject_index][np.newaxis, np.newaxis, :]
         cost = np.mean(np.sum(residual**2, axis=2), axis=1)
-        weight = _softmax(-0.5 * (cost / temperature + prior_cost))
+        weight = _posterior_weight(cost, prior_cost, temperature)
         map_state = int(np.argmax(weight))
         map_candidate = int(expanded["candidate_index"][map_state])
         prediction_feature = weight @ state_mean
-        prediction_csd = np.einsum("s,sfcd->fcd", weight, expanded["csd"], optimize=True)
+        prediction_csd = _posterior_csd(weight, expanded)
         predictions.append(prediction_csd)
         fit_cost = float(np.sum((prediction_feature - fit_features[subject_index]) ** 2))
         validation_cost = float(np.sum((prediction_feature - validation_features[subject_index]) ** 2))
@@ -388,6 +827,8 @@ def fit_spectral_subjects(
             "temporal_persistence_cost_ratio_to_pooled_null": temporal_persistence_cost / validation_null if validation_null > 0 else np.nan,
             "observation_noise_fraction_posterior_mean": float(weight @ expanded["observation_noise_fraction"]),
             "observation_noise_exponent_posterior_mean": float(weight @ expanded["observation_noise_exponent"]),
+            "source_background_fraction_posterior_mean": float(weight @ expanded["source_background_fraction"]),
+            "source_background_exponent_posterior_mean": float(weight @ expanded["source_background_exponent"]),
         }
         state_parameter_values = bank.parameters[expanded["candidate_index"]]
         for column, name in enumerate(PARAMETER_NAMES):
@@ -405,17 +846,29 @@ def fit_spectral_subjects(
                     "candidate_index": int(expanded["candidate_index"][state]),
                     "observation_noise_fraction": float(expanded["observation_noise_fraction"][state]),
                     "observation_noise_exponent": float(expanded["observation_noise_exponent"][state]),
+                    "source_background_fraction": float(expanded["source_background_fraction"][state]),
+                    "source_background_exponent": float(expanded["source_background_exponent"][state]),
                     "posterior_weight": float(weight[state]),
                 }
             )
     prediction_array = np.stack(predictions)
     table = pd.DataFrame(records)
-    fit_auto, fit_cross = transformer.transform_blocks(fitting.csd)
-    validation_auto, validation_cross = transformer.transform_blocks(validation.csd)
-    prediction_auto, prediction_cross = transformer.transform_blocks(prediction_array)
+    fit_auto, fit_cross, fit_topography = transformer.transform_blocks(fitting.csd)
+    validation_auto, validation_cross, validation_topography = (
+        transformer.transform_blocks(validation.csd)
+    )
+    prediction_auto, prediction_cross, prediction_topography = (
+        transformer.transform_blocks(prediction_array)
+    )
     for name, fit_block, validation_block, prediction_block in (
         ("auto_spectrum", fit_auto, validation_auto, prediction_auto),
         ("complex_coherency", fit_cross, validation_cross, prediction_cross),
+        (
+            "alpha_topography",
+            fit_topography,
+            validation_topography,
+            prediction_topography,
+        ),
     ):
         pooled_block = fit_block[train_indices].mean(axis=0)
         numerator = np.mean((prediction_block - validation_block) ** 2, axis=1)
@@ -470,12 +923,26 @@ def fit_spectral_subjects(
         validation,
         prediction_array,
         table,
+        holdout_indices,
     )
     group_effect_metrics = _plot_group_effects(
         fit_dir / "m5_spectral_group_effects.png",
         validation,
         prediction_array,
         holdout_indices,
+    )
+    recovery_correlations = recovery_summary.get(
+        "parameter_recovery_correlations", {}
+    )
+    parameter_effects = _plot_heldout_parameter_effects(
+        fit_dir / "m5_heldout_parameter_effects.png",
+        table,
+        config.empirical.groups,
+        recovery_correlations,
+        config.spectral.split_seed + 1,
+    )
+    parameter_effects.to_csv(
+        fit_dir / "heldout_group_parameter_effects.csv", index=False
     )
     split_summary: dict[str, Any] = {}
     for split in ("train", "holdout"):
@@ -491,6 +958,7 @@ def fit_spectral_subjects(
             "median_candidate_posterior_ess": float(selected["posterior_effective_sample_size_candidates"].median()),
             "median_auto_spectrum_validation_cost_ratio_to_pooled_null": float(selected["validation_auto_spectrum_cost_ratio_to_pooled_null"].median()),
             "median_complex_coherency_validation_cost_ratio_to_pooled_null": float(selected["validation_complex_coherency_cost_ratio_to_pooled_null"].median()),
+            "median_alpha_topography_validation_cost_ratio_to_pooled_null": float(selected["validation_alpha_topography_cost_ratio_to_pooled_null"].median()),
         }
 
     def json_value(value: Any) -> Any:
@@ -504,8 +972,80 @@ def fit_spectral_subjects(
             return value.item()
         return value
 
+    observation_boundary = bool(
+        population_rows[0]["observation_noise_fraction"]
+        == max(config.posterior.observation_noise_fractions)
+    )
+    source_boundary = bool(
+        len(config.posterior.source_background_fractions) > 1
+        and population_rows[0]["source_background_fraction"]
+        == max(config.posterior.source_background_fractions)
+    )
+    structural_recovery = [
+        float(recovery_correlations.get(name, 0.0))
+        for name in (
+            "default_dorsattn_weight_contrast",
+            "default_salventattn_weight_contrast",
+        )
+    ]
+    holdout_summary = split_summary["holdout"]
+    acceptance_gates = {
+        "holdout_unseen_total_cost_below_pooled_null": bool(
+            holdout_summary["median_validation_cost_ratio_to_pooled_null"] < 1.0
+        ),
+        "holdout_majority_of_subjects_beat_pooled_null": bool(
+            holdout_summary["fraction_beating_pooled_null_on_validation"] > 0.5
+        ),
+        "holdout_auto_spectrum_cost_below_pooled_null": bool(
+            holdout_summary[
+                "median_auto_spectrum_validation_cost_ratio_to_pooled_null"
+            ]
+            < 1.0
+        ),
+        "holdout_complex_coherency_cost_below_pooled_null": bool(
+            holdout_summary[
+                "median_complex_coherency_validation_cost_ratio_to_pooled_null"
+            ]
+            < 1.0
+        ),
+        "holdout_alpha_topography_cost_below_pooled_null": bool(
+            holdout_summary[
+                "median_alpha_topography_validation_cost_ratio_to_pooled_null"
+            ]
+            < 1.0
+        ),
+        "holdout_power_group_effect_preserved": bool(
+            group_effect_metrics.get(
+                "channel_frequency_log_power_effect_correlation", 0.0
+            )
+            >= 0.30
+        ),
+        "holdout_alpha_topography_group_effect_preserved": bool(
+            group_effect_metrics.get("alpha_topography_effect_correlation", 0.0)
+            >= 0.30
+        ),
+        "holdout_coherency_group_effect_preserved": bool(
+            group_effect_metrics.get(
+                "complex_coherency_effect_correlation", 0.0
+            )
+            >= 0.10
+        ),
+        "population_observation_nuisance_not_at_boundary": bool(
+            not observation_boundary and not source_boundary
+        ),
+        "at_least_three_parameters_recoverable_in_synthetic_data": bool(
+            sum(float(value) >= 0.50 for value in recovery_correlations.values())
+            >= 3
+        ),
+        "both_structural_modes_recoverable_in_synthetic_data": bool(
+            len(structural_recovery) == 2
+            and min(structural_recovery) >= 0.30
+        ),
+    }
+    accepted = all(acceptance_gates.values())
     summary = {
-        "status": "pilot" if len(bank.parameters) < 64 or config.design.replicates < 3 else "production-scale bank completed",
+        "status": "accepted" if accepted else "not_accepted",
+        "run_scale": "pilot" if len(bank.parameters) < 64 or config.design.replicates < 3 else "production",
         "method": "label-blind discrete simulation-bank approximate posterior with observation-noise marginalization",
         "neural_model": "two locally coupled Jansen-Rit generators per Schaefer parcel; shared delayed TVB structural network",
         "objective": {
@@ -522,34 +1062,62 @@ def fit_spectral_subjects(
                     if transformer.cross_components.shape[0]
                     else transformer.cross_mean.size
                 ),
+                "direct_alpha_topography_coordinates": int(
+                    transformer.topography_components.shape[0]
+                    if transformer.topography_components.shape[0]
+                    else transformer.topography_mean.size
+                ),
                 "reliability_calibration": (
                     "two non-overlapping quarters inside the fitting half; "
-                    "the final half remains unseen"
+                    "training-subject final halves select one global posterior "
+                    "temperature, while subject-holdout final halves remain unseen"
                 ),
             },
             "periodic_aperiodic": "per-sensor-mode log-linear background from 2-7 and 30-40 Hz; fit retains residual spectra and explicit exponents",
             "absolute_amplitude": "per-sensor-mode intercepts removed as observation-gain nuisances",
             "dc": "excluded by demeaning and the 2-Hz lower fit bound",
-            "structural_weights": "fixed after the v2 identifiability failure",
+            "structural_weights": (
+                "two symmetric mean-strength-preserving network-pair modes, bounded "
+                "to +/-10% and given a stronger Gaussian shrinkage prior"
+            ),
+            "spatial_physiology": (
+                "visual/default noise and visual/dorsal-attention time contrasts, "
+                "plus two fixed diagnosis-blind network-noise modes learned from "
+                "training-subject alpha-topography variation"
+            ),
         },
         "posterior": {
             "kind": "finite-bank kernel posterior, not an exact posterior and not yet amortized SBI",
-            "temperature_from_median_train_subject_fit_vs_unseen_discrepancy": temperature,
+            "base_temperature_from_median_train_subject_fit_vs_unseen_discrepancy": base_temperature,
+            "selected_temperature_training_subjects_only": temperature,
+            "temperature_selection_file": "training_only_temperature_selection.csv",
             "observation_noise_grid_size": int(
                 len(config.posterior.observation_noise_fractions)
                 * len(config.posterior.observation_noise_exponents)
+                * len(config.posterior.source_background_fractions)
+                * len(config.posterior.source_background_exponents)
             ),
+            "gaussian_regularization": {
+                "global_parameter_strength": config.posterior.prior_strength,
+                "spatial_physiology_strength": config.posterior.spatial_prior_strength,
+                "structural_weight_strength": config.posterior.structural_prior_strength,
+                "definition": (
+                    "quadratic Gaussian penalty on range-normalized deviations; "
+                    "added to the data objective before kernel tempering"
+                ),
+            },
         },
+        "synthetic_recovery": recovery_summary,
         "population_calibration": {
             "target": "label-blind pooled fitting-half spectrum from training subjects",
             "best_state": population_rows[0],
-            "best_observation_noise_fraction_at_grid_maximum": bool(
-                population_rows[0]["observation_noise_fraction"]
-                == max(config.posterior.observation_noise_fractions)
-            ),
+            "best_observation_noise_fraction_at_grid_maximum": observation_boundary,
+            "best_source_background_fraction_at_grid_maximum": source_boundary,
             "interpretation": (
-                "A boundary-saturating observation nuisance indicates unresolved "
-                "neural/forward-model mismatch; do not expand the subject bank yet."
+                "An observation nuisance reaches the tested boundary, indicating "
+                "unresolved neural/forward-model mismatch."
+                if observation_boundary or source_boundary
+                else "Observation nuisances are interior to the tested grid."
             ),
         },
         "simulation": {
@@ -559,16 +1127,96 @@ def fit_spectral_subjects(
             "common_random_numbers_across_candidates": True,
         },
         "validation": split_summary,
+        "validation_roles": {
+            "train_subject_second_half": (
+                "used only to select one global posterior temperature and therefore "
+                "reported as internal validation, not an unbiased test"
+            ),
+            "holdout_subject_first_half": (
+                "used for that subject's diagnosis-blind parameter fit"
+            ),
+            "holdout_subject_second_half": (
+                "untouched by feature, objective-resolution, nuisance-grid, and "
+                "temperature selection; primary subject-level test"
+            ),
+        },
         "subject_holdout_unseen_group_effect_preservation": group_effect_metrics,
+        "subject_holdout_parameter_effects": {
+            "table": "heldout_group_parameter_effects.csv",
+            "figure": "m5_heldout_parameter_effects.png",
+            "interpretation": (
+                "Descriptive effects of independently fitted posterior means; "
+                "parameters failing synthetic recovery are not biological findings."
+            ),
+        },
+        "acceptance_gates": acceptance_gates,
         "guardrails": [
             "Diagnosis labels never enter subject fitting or feature reduction.",
+            "The two empirical spatial modes use training subjects only and no diagnosis labels.",
             "Group summaries are descriptive second-level outputs, not group-level fits.",
             "The pooled empirical mean is the explicit null model.",
+            "Only the subject-holdout second halves are an unbiased final test after temperature selection.",
             "Stimulation optimization remains blocked until unseen spatial group effects pass.",
         ],
         "config": asdict(config),
     }
     (fit_dir / "fit_summary.json").write_text(
         json.dumps(json_value(summary), indent=2), encoding="utf-8"
+    )
+    (fit_dir / "acceptance_report.json").write_text(
+        json.dumps(
+            {
+                "accepted": accepted,
+                "gates": acceptance_gates,
+                "note": (
+                    "No stimulation optimization should use this fit until all "
+                    "gates required by the scientific question pass."
+                ),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    report_lines = [
+        f"# M5 acceptance: {'PASS' if accepted else 'FAIL'}",
+        "",
+        "## Key held-out metrics",
+        "",
+        (
+            "- median unseen total cost / pooled null: "
+            f"{holdout_summary['median_validation_cost_ratio_to_pooled_null']:.3f}"
+        ),
+        (
+            "- held-out subjects beating pooled null: "
+            f"{holdout_summary['fraction_beating_pooled_null_on_validation']:.1%}"
+        ),
+        (
+            "- median auto / coherency / alpha-topography ratios: "
+            f"{holdout_summary['median_auto_spectrum_validation_cost_ratio_to_pooled_null']:.3f} / "
+            f"{holdout_summary['median_complex_coherency_validation_cost_ratio_to_pooled_null']:.3f} / "
+            f"{holdout_summary['median_alpha_topography_validation_cost_ratio_to_pooled_null']:.3f}"
+        ),
+        (
+            "- power / alpha-topography / coherency group-effect correlations: "
+            f"{group_effect_metrics.get('channel_frequency_log_power_effect_correlation', np.nan):.3f} / "
+            f"{group_effect_metrics.get('alpha_topography_effect_correlation', np.nan):.3f} / "
+            f"{group_effect_metrics.get('complex_coherency_effect_correlation', np.nan):.3f}"
+        ),
+        (
+            "- structural-mode synthetic-recovery correlations: "
+            + " / ".join(f"{value:.3f}" for value in structural_recovery)
+        ),
+        "",
+        "## Gates",
+        "",
+        *[
+            f"- {'PASS' if passed else 'FAIL'}: {name.replace('_', ' ')}"
+            for name, passed in acceptance_gates.items()
+        ],
+        "",
+        "Stimulation optimization remains blocked while required gates fail.",
+    ]
+    (fit_dir / "ACCEPTANCE.md").write_text(
+        "\n".join(report_lines) + "\n", encoding="utf-8"
     )
     return table

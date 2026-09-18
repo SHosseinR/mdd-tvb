@@ -1,123 +1,213 @@
-# M5 spectral redesign
+# M5 resting-state spectral fitting
 
-## Outcome
+## Scope and scientific status
 
-The new pipeline is implemented and runs end to end, but the current eight-
-candidate pilot still fails its fit gate. It is a diagnostic pilot, not an
-accepted Healthy or MDD-indication model and not an input to stimulation
-optimization.
+M5 fits one whole-brain TVB model to each subject's resting-state EEG. It does
+not train a diagnosis classifier and it does not fit one Healthy model and one
+MDD model. Group summaries are computed only after diagnosis-blind individual
+fits, as a second-level descriptive analysis.
 
-The decisive comparison is against a pooled empirical training-subject null,
-not against an arbitrary TVB candidate. On the 65 subjects excluded from all
-feature-reduction fitting, the posterior predictive median unseen cost ratio is
-about 1.40; lower than one is required. Even an invalid oracle that chooses a
-candidate using the unseen data remains above one. The empirical first half,
-by contrast, predicts the same subject's unseen half at about 0.40 times the
-pooled-null cost. Thus stable individual EEG information exists, but this pilot
-model does not capture it. This is underfitting/model mismatch, not overfitting.
+The original eight-candidate pilot was genuine underfitting: its prediction of
+the unseen half of each subject was worse than a pooled empirical null. The
+completed 512-candidate production run beats that null for total spectrum and
+power, but it still fails the alpha-topography, complex-coherency group-effect,
+and connectome-recovery gates. Therefore it is not yet an accepted mechanistic
+MDD model and must not be used for TMS target or protocol claims.
 
-## What changed from M5 v2
+## Data split and leakage controls
 
-1. Every Schaefer parcel contains two locally coupled Jansen--Rit generators:
-   an alpha generator and a faster generator. Their weighted pyramidal PSPs
-   drive and are projected from the same delayed TVB structural network.
-2. Excitatory and inhibitory inverse time constants have separate parameters.
-   Tying them together was tested and rejected because it shifted the reference
-   alpha regime to approximately 6 Hz.
-3. The empirical objective is the 2--40 Hz complex sensor cross-spectral matrix,
-   including autospectra and real/imaginary coherency. It no longer collapses
-   the PSD across channels.
-4. A group-blind eigenspace reduces the average-referenced 26-channel data to
-   ten sensor modes. A diagonal shrinkage of 0.05 stabilizes each spectral
-   matrix.
-5. Periodic residual spectra are separated from a log-linear aperiodic
-   background fitted outside 8--29 Hz. Per-mode intercepts are observation-gain
-   nuisances; the exponents remain in the objective.
-6. Two non-overlapping quarters inside the fitting half select temporally
-   reliable coordinates. Real and imaginary coherency receive equal quotas, so
-   reliable zero-lag volume-conduction structure cannot exclude phase.
-7. The second half of every recording is never used for feature reduction or
-   fitting. A stratified 20% subject holdout also remains outside the
-   group-blind feature transformer.
-8. Each subject gets an approximate finite-bank posterior, not only a winning
-   candidate. White/pink diagonal observation-noise amount and exponent are
-   marginalized as nuisance variables. Neural posterior means, 5--95% ranges,
-   MAP states, and effective sample sizes are saved.
-9. The production configuration uses three stochastic seeds and 60 analysed
-   seconds per seed. The pilot uses two seeds and ten analysed seconds solely
-   to verify the machinery.
+The 327 TDBRAIN recordings comprise 176 Healthy and 151 MDD recordings. Every
+recording is divided chronologically into a fitting half and an unseen half.
+The fitting half is divided again into two quarters for temporal-reliability
+selection.
 
-Structural weights remain fixed. The earlier complete +/-10% network-pair scan
-showed inadequate EEG sensitivity and recovery. Conduction speed and a single
-mean-preserving Dorsal Attention time-scale contrast are retained. Structural
-weight modes may be reconsidered only after this observation/model mismatch is
-fixed and a new sensitivity/recovery audit passes under the complex-spectral
-objective.
+A fixed, stratified 20% subject holdout contains 65 subjects. The remaining 262
+training subjects are used to learn the label-blind sensor basis, choose
+reliable objective coordinates, audit objective resolution, derive two
+label-blind spatial modes, and select one global posterior temperature. The
+second halves of the 65 subject holdouts are untouched until final evaluation.
+Their first halves are still used to fit those subjects individually; this is
+the intended prospective-within-subject validation design.
 
-## Commands
+Diagnosis labels never enter feature reduction, candidate selection, posterior
+weights, or subject-parameter estimation. Labels are used afterward only to
+ask whether independently fitted models preserve empirical Healthy--MDD
+effects.
 
-Pilot (already completed):
+## Neural and observation model
+
+Each Schaefer-200 parcel contains two locally coupled Jansen--Rit generators:
+an alpha generator and a faster generator. Both share the same delayed TVB
+structural network. Separate excitatory and inhibitory inverse-time-constant
+scales are retained because tying them shifted the reference regime into theta.
+
+The regional pyramidal PSP is projected to the published 26-channel TDBRAIN
+montage with the documented analytic spherical lead field. This is a common
+template forward model, not a personalized BEM/FEM solution. Per-channel DC is
+excluded and absolute sensor gain is treated as a nuisance; the empirical EEG
+does not need its removed DC offset restored.
+
+The subject objective contains three blocks:
+
+1. reliable coordinates from channel-resolved 2--40 Hz periodic residuals and
+   aperiodic exponents;
+2. reliable real and imaginary complex-coherency coordinates; and
+3. a direct centered 8--13 Hz scalp-topography block.
+
+The declared production weights are 0.45, 0.45, and 0.10. The topography weight
+was selected as a training-only Pareto point: compared with zero topography
+weight it improves internal unseen alpha-topography error while retaining a
+total internal unseen cost below the pooled empirical null. The subject-holdout
+set was not used for this choice.
+
+Diagonal colored observation noise is marginalized over a fixed fraction and
+exponent grid. It is an observation/unmodelled-background nuisance, never a
+disease parameter. A boundary optimum is treated as model-mismatch evidence.
+
+## Parameterization
+
+The finite bank contains 17 parameters:
+
+- nine global dynamics parameters: coupling, conduction speed, mean drive,
+  excitatory and inhibitory time scales, fast-generator ratio and fraction,
+  neural-noise magnitude, and neural-noise correlation time;
+- six structured spatial-physiology parameters: dorsal-attention and visual
+  time-scale contrasts, default and visual noise contrasts, and two fixed
+  seven-network noise modes derived by label-blind PCA from training-subject
+  alpha-topography variation; and
+- two symmetric, graph-support-preserving network-pair connectome contrasts,
+  bounded to +/-10% and constrained to preserve total weight.
+
+The design is a Cartesian product of 16 nine-dimensional global Sobol states
+and 32 eight-dimensional spatial/connectome Sobol states, giving 512 unique
+candidates and one exact reference candidate. The production bank uses three
+stochastic seeds and 60 analysed seconds after a two-second transient.
+
+The two connectome modes are included because disorder-related coupling may be
+important, but a posterior group difference is not interpreted as tract
+change unless synthetic recovery passes. The current short calibration does
+not recover them.
+
+## Subject inference and regularization
+
+For each subject, every neural candidate is combined with the declared
+observation-nuisance grid. The squared standardized feature error is augmented
+with quadratic Gaussian penalties on range-normalized parameters. Spatial
+physiology receives additional shrinkage and the two structural modes receive
+the strongest shrinkage. The prior penalty is added to the data objective
+before temperature scaling:
+
+`weight(state) proportional to exp[-(data_cost + prior_cost)/(2 temperature)]`.
+
+This is the requested Gaussian regularization idea: it discourages implausible
+or boundary solutions and reduces overfitting, but it cannot make an
+insensitive parameter identifiable. Different biological parameter vectors can
+produce nearly identical EEG; in that case EEG constrains only combinations of
+parameters, not every parameter independently.
+
+One global temperature is selected using only the unseen halves of training
+subjects. Posterior means, 5--95% intervals, MAP states, candidate effective
+sample size, and posterior-predictive CSDs are saved for every subject. The
+posterior is a finite-bank kernel approximation, not exact Bayesian inference
+or amortized simulation-based inference.
+
+## Validation and acceptance
+
+The explicit null is the pooled fitting-half empirical feature vector from
+training subjects. A ratio below one means the subject-specific TVB prediction
+is closer to unseen EEG than that pooled empirical null. The empirical
+first-half-to-second-half prediction is also reported as a measurement-noise
+floor, not as a model competitor.
+
+`fit/ACCEPTANCE.md` and `fit/acceptance_report.json` require all of the
+following:
+
+- held-out unseen total, autospectral, complex-coherency, and alpha-topography
+  costs below the pooled null;
+- a majority of held-out subjects beating the null;
+- preservation of held-out channel-by-frequency power, alpha-topography, and
+  complex-coherency Healthy--MDD effect directions;
+- an interior population observation-nuisance optimum;
+- at least three recoverable parameters in stochastic synthetic recovery; and
+- both +/-10% structural modes recoverable in synthetic data.
+
+Failure of any required gate keeps stimulation optimization blocked. More
+simulation time can reduce Monte Carlo error; it cannot by itself repair a
+forward-model or parameter-sensitivity failure.
+
+## Accelerated simulation
+
+TVB is the scientific reference. The JAX backend mirrors its delayed
+dual-generator equations, stochastic Heun integration, colored neural noise,
+temporal monitor, candidate-specific edge weights, and analytic EEG projection.
+Deterministic TVB/JAX channel correlation was 0.9972 and stochastic normalized
+log-PSD correlation was 0.9962 on the real connectome. See `JAX_BACKEND.md` for
+the full validation and timing record.
+
+The private Kaggle notebook is `shahmadi/tvbgpu`. It generates only the
+simulation bank; all empirical fitting and held-out evaluation run locally.
+VBI is not a runtime dependency: its abstractions did not replace the custom
+dual-Jansen--Rit simulator, observation model, or subject objective, so adding
+it would have increased integration surface without accelerating most work.
+
+## Production outcome (2026-09-18)
+
+The final bank contains 512 candidates, three stochastic replicates, 39
+frequency bins, and 26 x 26 complex cross-spectra. The GPU simulation took 47.9
+minutes. All outputs were finite and the downloaded bank was validated against
+its declared 367,969,178-byte size and schema before fitting.
+
+On the 65 held-out subjects:
+
+- the median unseen total-cost ratio to the pooled empirical null was 0.851;
+- 64.6% of subjects beat that null;
+- autospectral, coherency, and alpha-topography ratios were 0.515, 0.953, and
+  1.750 respectively; and
+- held-out Healthy--MDD effect correlations were 0.433 for channel-by-frequency
+  power, 0.301 for alpha topography, and -0.115 for complex coherency.
+
+Ten of the 17 parameters passed the declared synthetic-recovery correlation
+threshold, but the two structural modes did not (correlations 0.108 and 0.061).
+The result is therefore `not_accepted`: eight of eleven gates pass. This is a
+large improvement over the original underfit pilot, but it is not sufficient
+evidence for individualized TMS targeting.
+
+## Commands and outputs
 
 ```powershell
-& .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral_pilot.toml
+& .\.conda\python.exe scripts\run_m5_spectral.py `
+  --config configs\m5_spectral.toml --stages extract
+
+& .\.conda\python.exe scripts\run_m5_spectral.py `
+  --config configs\m5_spectral.toml --stages fit
 ```
 
-Production settings (implemented but intentionally not launched while the
-pilot gate fails):
+The bank can be generated with TVB or with `--backend jax --batch-size 64`.
+Stages are independently resumable.
 
-```powershell
-& .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral.toml
-```
+Training-only design audits are reproducible with
+`scripts/audit_spectral_objectives.py`,
+`scripts/audit_spectral_topography.py`, and
+`scripts/audit_network_topography.py`. They must not be rerun repeatedly to
+select whatever setting performs best on the subject holdout.
 
-Stages can be resumed independently with `--stages extract`, `bank`, or `fit`.
-The production bank is 128 candidates x 3 random seeds x 62 seconds and is
-expected to require roughly an overnight run on the present CPU.
+Primary outputs are:
 
-## Current pilot diagnosis
+- `fit/subject_posteriors.csv` for per-subject fit, unseen, null, posterior,
+  and parameter summaries;
+- `fit/m5_spectral_validation.png` for subject-holdout fit/unseen validation;
+- `fit/m5_spectral_group_effects.png` for held-out Healthy--MDD effect
+  preservation;
+- `fit/m5_heldout_parameter_effects.png` and its CSV for descriptive
+  posterior-parameter effects, visibly guarded by synthetic recoverability;
+- `fit/m5_eeg_examples.png` for representative empirical and selected-model
+  stationary traces and PSDs;
+- `fit/synthetic_recovery.csv` for parameter identifiability;
+- `fit/training_only_temperature_selection.csv` for the regularization-kernel
+  choice; and
+- `fit/fit_summary.json` and `fit/ACCEPTANCE.md` for the authoritative result.
 
-- The corrected candidate bank peaks mainly from 8--11 Hz; the accidental
-  theta-dominant reference problem is fixed.
-- The posterior remains broad across almost all eight neural candidates. This
-  is expected with such a small bank and is explicitly reported by posterior
-  effective sample size.
-- Autospectral and complex-coherency posterior predictions both remain worse
-  than the pooled empirical null on held-out unseen EEG.
-- The pooled-target calibration selects the maximum allowed observation-noise
-  fraction (0.75). That boundary saturation is evidence of unresolved neural
-  or forward-model mismatch, not permission to explain EEG as sensor noise.
-- Empirical zero-lag coherency was highly reliable, but it is not a clean neural
-  connectivity target with a shared approximate spherical lead field.
-- Balanced phase-sensitive selection is therefore mandatory even though it
-  makes the current failure more visible.
-- Subject-holdout group-effect correlations must be interpreted together with
-  effect-norm retention. A moderate correlation with a near-zero retained norm
-  is not successful preservation.
-
-## Required next gate
-
-Before the production subject bank, calibrate the group-blind model to the
-pooled empirical cross spectrum and determine why the shared lead field and
-neural covariance miss reliable coherency. Candidate remedies must be tested,
-not assumed: stronger network coupling, a small recoverable set of regional
-excitability/noise contrasts, and a source-space or surface-Laplacian validation
-view. Do not add thousands of edges or arbitrary correlated observation noise.
-
-Only proceed to subject inference when all of the following hold:
-
-- the population model beats the pooled spectral-shape baseline on declared
-  model discrepancy metrics;
-- subject-holdout unseen posterior prediction is competitive with the pooled
-  empirical null;
-- posterior candidate ESS and synthetic recovery demonstrate information about
-  at least a few neural parameter combinations;
-- Healthy--MDD differences retain both direction and non-trivial magnitude in
-  autospectral/topographic and phase-sensitive connectivity views.
-
-## Main outputs
-
-- `outputs/m5_spectral_pilot/empirical/cross_spectra_*.npz`
-- `outputs/m5_spectral_pilot/bank/spectral_simulation_bank.npz`
-- `outputs/m5_spectral_pilot/fit/subject_posteriors.csv`
-- `outputs/m5_spectral_pilot/fit/fit_summary.json`
-- `outputs/m5_spectral_pilot/fit/m5_spectral_validation.png`
-- `outputs/m5_spectral_pilot/fit/m5_spectral_group_effects.png`
+The EEG examples add a deterministic realization of the fitted posterior-mean
+colored sensor-noise nuisance to the MAP neural simulation. They are stationary
+examples, not time-aligned predictions of empirical samples. A good-looking
+trace is useful QC but is not evidence of subject-level fit.

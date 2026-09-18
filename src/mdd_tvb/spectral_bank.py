@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .config import load_config
-from .connectome import load_connectome
+from .connectome import load_connectome, with_network_pair_gains
 from .heterogeneity import network_labels
 from .multifrequency import run_dual_jansen_rit
 from .spectral_config import SpectralM5Config
@@ -52,16 +52,45 @@ def _inputs(path: str) -> tuple[Any, Any, np.ndarray]:
     return _CACHE[path]
 
 
-def _network_time_map(networks: np.ndarray, contrast: float) -> dict[str, float]:
-    names, counts = np.unique(networks.astype(str), return_counts=True)
-    target_count = int(counts[np.flatnonzero(names == "DorsAttn")[0]])
-    other_multiplier = 1.0 - contrast * target_count / (len(networks) - target_count)
-    if other_multiplier <= 0.0 or 1.0 + contrast <= 0.0:
-        raise ValueError("DorsAttn time-scale contrast produces a non-positive multiplier")
+def _network_contrast_map(
+    networks: np.ndarray, contrasts: dict[str, float]
+) -> dict[str, float]:
+    """Return positive, parcel-mean-one network multipliers."""
+
+    labels = networks.astype(str)
+    names = np.unique(labels)
+    multipliers = np.ones(len(labels), dtype=float)
+    for name, contrast in contrasts.items():
+        if name not in names:
+            raise ValueError(f"Unknown network contrast target: {name}")
+        if 1.0 + contrast <= 0.0:
+            raise ValueError(f"Network contrast for {name} is non-positive")
+        multipliers[labels == name] *= 1.0 + contrast
+    multipliers /= multipliers.mean()
     return {
-        str(name): (1.0 + contrast if name == "DorsAttn" else other_multiplier)
+        str(name): float(multipliers[labels == name][0])
         for name in names
     }
+
+
+def connectome_for_spectral_candidate(
+    connectome: Any,
+    networks: np.ndarray,
+    candidate: SpectralCandidate,
+) -> Any:
+    """Apply two regularized, symmetric +/-10% structural block modes."""
+
+    return with_network_pair_gains(
+        connectome,
+        networks,
+        {
+            ("Default", "DorsAttn"): 1.0
+            + candidate.default_dorsattn_weight_contrast,
+            ("Default", "SalVentAttn"): 1.0
+            + candidate.default_salventattn_weight_contrast,
+        },
+        preserve_total_strength=True,
+    )
 
 
 def build_spectral_run_config(
@@ -72,6 +101,18 @@ def build_spectral_run_config(
     replicate: int,
 ) -> Any:
     design = config.design
+    noise_contrasts = {
+        "Default": candidate.default_noise_contrast,
+        "Vis": candidate.visual_noise_contrast,
+    }
+    for coefficient, mode in (
+        (candidate.network_noise_mode_1, design.network_noise_mode_1),
+        (candidate.network_noise_mode_2, design.network_noise_mode_2),
+    ):
+        for network, loading in mode:
+            noise_contrasts[network] = (
+                noise_contrasts.get(network, 0.0) + coefficient * loading
+            )
     return replace(
         baseline,
         model=replace(
@@ -94,8 +135,16 @@ def build_spectral_run_config(
         ),
         heterogeneity=replace(
             baseline.heterogeneity,
-            network_time_scale_multipliers=_network_time_map(
-                networks, candidate.dorsattn_time_contrast
+            network_time_scale_multipliers=_network_contrast_map(
+                networks,
+                {
+                    "DorsAttn": candidate.dorsattn_time_contrast,
+                    "Vis": candidate.visual_time_contrast,
+                },
+            ),
+            network_noise_multipliers=_network_contrast_map(
+                networks,
+                noise_contrasts,
             ),
         ),
         monitor=replace(
@@ -116,9 +165,12 @@ def simulate_spectral_candidate(
     run_config = build_spectral_run_config(
         baseline, networks, candidate, config, replicate
     )
+    candidate_connectome = connectome_for_spectral_candidate(
+        connectome, networks, candidate
+    )
     result = run_dual_jansen_rit(
         run_config,
-        connectome,
+        candidate_connectome,
         fast_ratio=candidate.fast_ratio,
         fast_fraction=candidate.fast_fraction,
         inhibitory_scale=1.0,

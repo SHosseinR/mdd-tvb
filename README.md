@@ -106,59 +106,50 @@ DC equilibrium or request biased empirical data.
 
 ## M5: group and subject fitting
 
-M5 fits amplitude- and DC-invariant EEG summaries with a direct TVB simulation
-bank. It includes global coupling, mean drive, separate excitatory and
-inhibitory inverse-time-constant scales, stochastic-drive magnitude, and
-regional time-constant dispersion. Seven bounded structural-network endpoint
-gains are implemented, but the revised pilot fixes them to one: complete ±10%
-network-pair and synthetic-recovery audits found that these EEG observations do
-not presently identify subject-level tract-weight changes.
+M5 fits one model per subject; it does not fit one Healthy model and one MDD
+model. Group summaries are diagnosis-label-blind individual fits aggregated
+afterward. The current method uses two locally coupled Jansen--Rit generators
+per parcel, delayed whole-brain coupling, complex 2--40 Hz cross spectra, a
+direct alpha-topography block, explicit periodic/aperiodic separation, and a
+finite-bank posterior with Gaussian shrinkage.
+
+The 17-parameter bank includes nine global dynamics parameters, six structured
+regional-physiology parameters, and two symmetric network-pair connectome modes
+bounded to +/-10%. The latter preserve graph support and total weight and
+receive stronger shrinkage. They are not interpreted as tract changes unless
+their synthetic-recovery gate passes.
 
 ```powershell
-& .\.conda\python.exe scripts\run_m5.py
+& .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral.toml
+& .\.conda\python.exe scripts\plot_m5_eeg_examples.py --config configs\m5_spectral.toml
 ```
 
-The revised pilot uses `configs/m5_fit_v2.toml`. It adds mechanistic spectral
-descriptors, training-only split-half-reliable theta/alpha/beta coherence
-edges, and a fixed group-blind colored background observation component:
+Every recording is split temporally. Its first half fits that subject and its
+second half evaluates the same prediction. A stratified 20% subject holdout is
+excluded from sensor-basis, feature, objective, nuisance, and temperature
+selection; its second halves are the final test. Diagnosis labels enter only
+the second-level group-effect audit.
 
-```powershell
-& .\.conda\python.exe scripts\run_m5.py --config configs\m5_fit_v2.toml
-```
+For batched simulation-bank generation on an NVIDIA GPU, install the optional
+`accelerated` dependencies and select `--backend jax`. TVB remains the default
+and the scientific reference; the accelerated path mirrors its delayed
+dual-generator equations, coloured neural noise, temporal averaging, and EEG
+observation model. See `docs/JAX_BACKEND.md`.
 
-The empirical recording is divided temporally. The first half is used for
-individual fitting and the second half is retained for subject-level
-validation. A stratified subject holdout independently checks group fits. See
-`docs/M5_FITTING.md` for the full estimand, loss, outputs, and limitations.
-The main outputs include `fit/m5_fit_summary.png`, which compares each group's
-empirical averages with the average of its independently fitted subject models;
-`fit/m5_individual_validation.png`, which compares fit-half and unseen-half
-metrics; and `fit/m5_eeg_examples.png`, which shows representative empirical and
-selected-TVB traces. `feature_audit/m5_fitted_group_effects.png` directly tests
-whether diagnosis-blind individual fits preserve empirical Healthy–MDD feature
-effects. The current revised pilot fails that mechanistic group-effect gate for
-alpha topography and alpha/beta coherence, so it must not yet be used for TMS
-target claims.
-
-### Cross-spectral M5 redesign
-
-The literature-driven replacement is now implemented in
-`scripts/run_m5_spectral.py`. It uses two locally coupled Jansen--Rit generators
-per parcel, separate excitatory/inhibitory time scales, complex 2--40 Hz sensor
-cross spectra reduced to ten group-blind sensor modes, explicit
-periodic/aperiodic separation, multi-seed simulation, observation-noise
-marginalization, and a finite-bank posterior for every subject. Reliable real
-and imaginary coherency coordinates are selected using two quarters inside the
-fitting half; the final half stays unseen.
-
-```powershell
-& .\.conda\python.exe scripts\run_m5_spectral.py --config configs\m5_spectral_pilot.toml
-```
-
-The completed eight-candidate pilot still underfits the unseen data relative to
-the pooled empirical null, so the 128 x 3 production bank is configured but not
-yet scientifically justified. See `docs/M5_SPECTRAL_REDESIGN.md` for the exact
-method, outputs, failure metrics, and next acceptance gate.
+The original eight-candidate pilot underfit the unseen data. The revised M5
+workflow therefore adds training-only objective/temperature calibration,
+quadratic Gaussian shrinkage, and a factorized 16-global by 32-spatial design.
+The completed production bank is 512 candidates x 3 random seeds x 62 seconds.
+On the 65-subject holdout, its median unseen cost is 0.851 times the pooled-null
+cost and 64.6% of subjects beat that null. It nevertheless passes only 8 of 11
+acceptance gates: alpha-topography fit, coherency group-effect preservation, and
+recovery of both structural modes fail. `fit/ACCEPTANCE.md` is authoritative,
+and stimulation work remains blocked until the required gates pass. See
+`docs/M5_SPECTRAL_REDESIGN.md` for the estimand, leakage controls,
+metrics, outputs, and limitations. The validation and group-effect figures use
+subject holdouts only; the held-out parameter-effect figure fades parameters
+that fail synthetic recovery. The earlier `scripts/run_m5.py` workflow is
+retained only as a historical feature-based prototype.
 
 ## Fitting cautions
 

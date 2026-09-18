@@ -20,10 +20,12 @@ cross_components = 0
 reliability_threshold = 0.20
 reliability_max_auto_coordinates = 192
 reliability_max_cross_coordinates = 256
+reliability_max_topography_coordinates = 24
 reliability_min_coordinates = 24
 diagonal_shrinkage = 0.05
-auto_weight = 0.50
-cross_weight = 0.50
+auto_weight = 0.45
+cross_weight = 0.25
+topography_weight = 0.30
 holdout_fraction = 0.20
 split_seed = 20260913
 

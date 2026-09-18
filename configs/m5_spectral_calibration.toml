@@ -1,14 +1,12 @@
 [paths]
 baseline_config = "configs/baseline.toml"
 dataset_root = "D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1/output/preprocessed_tdbrain_restEC_set2"
-output_dir = "outputs/m5_spectral"
+output_dir = "outputs/m5_spectral_calibration"
 
 [empirical]
 groups = ["Healthy", "MDD"]
 max_duration_s = 120.0
 n_jobs = 4
-# Keep the sensor covariance compatible with the explicit lead field and the
-# diagonal sensor-noise nuisance. Surface Laplacian remains a validation view.
 apply_surface_laplacian = false
 
 [spectral]
@@ -18,8 +16,6 @@ frequency_max_hz = 40.0
 frequency_bin_hz = 1.0
 sensor_modes = 10
 sensor_basis_method = "empirical"
-# Zero means retain every standardized coordinate after the 10-mode sensor
-# projection. This prevents PCA from hiding a common model-data mismatch.
 auto_components = 0
 cross_components = 0
 reliability_threshold = 0.20
@@ -41,9 +37,8 @@ samples = 512
 strategy = "factorized"
 global_samples = 16
 spatial_samples = 32
-replicates = 3
-# 2 s burn-in followed by 60 s analysed data per random seed.
-duration_ms = 62000.0
+replicates = 2
+duration_ms = 12000.0
 transient_ms = 2000.0
 dt_ms = 0.5
 n_jobs = 6
@@ -91,7 +86,6 @@ reference_default_dorsattn_weight_contrast = 0.0
 reference_default_salventattn_weight_contrast = 0.0
 
 [posterior]
-# These are marginalized observation nuisances, never disease parameters.
 observation_noise_fractions = [0.0, 0.20, 0.40, 0.60, 0.80, 0.90]
 observation_noise_exponents = [0.5, 1.0, 1.5, 2.0]
 source_background_fractions = [0.0]

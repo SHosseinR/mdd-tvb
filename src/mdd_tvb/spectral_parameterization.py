@@ -1,4 +1,4 @@
-"""Low-dimensional, fixed-connectome design for spectral M5."""
+"""Structured low-dimensional physiology/connectome design for spectral M5."""
 
 from __future__ import annotations
 
@@ -21,6 +21,13 @@ PARAMETER_NAMES: tuple[str, ...] = (
     "noise_nsig",
     "noise_tau_ms",
     "dorsattn_time_contrast",
+    "visual_time_contrast",
+    "default_noise_contrast",
+    "visual_noise_contrast",
+    "network_noise_mode_1",
+    "network_noise_mode_2",
+    "default_dorsattn_weight_contrast",
+    "default_salventattn_weight_contrast",
 )
 
 
@@ -37,6 +44,13 @@ class SpectralCandidate:
     noise_nsig: float
     noise_tau_ms: float
     dorsattn_time_contrast: float
+    visual_time_contrast: float
+    default_noise_contrast: float
+    visual_noise_contrast: float
+    network_noise_mode_1: float
+    network_noise_mode_2: float
+    default_dorsattn_weight_contrast: float
+    default_salventattn_weight_contrast: float
 
     def numeric_vector(self) -> np.ndarray:
         return np.asarray(
@@ -53,9 +67,6 @@ def _log(value: float, bounds: tuple[float, float]) -> float:
 
 
 def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandidate]:
-    engine = qmc.Sobol(d=len(PARAMETER_NAMES), scramble=True, seed=settings.seed)
-    exponent = int(np.ceil(np.log2(max(settings.samples - 1, 1))))
-    unit = engine.random_base2(exponent)[: max(settings.samples - 1, 1)]
     ranges = (
         settings.global_coupling_range,
         settings.speed_range,
@@ -67,36 +78,94 @@ def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandida
         settings.noise_nsig_range,
         settings.noise_tau_ms_range,
         settings.dorsattn_time_contrast_range,
+        settings.visual_time_contrast_range,
+        settings.default_noise_contrast_range,
+        settings.visual_noise_contrast_range,
+        settings.network_noise_mode_1_range,
+        settings.network_noise_mode_2_range,
+        settings.default_dorsattn_weight_contrast_range,
+        settings.default_salventattn_weight_contrast_range,
     )
     logarithmic = {7, 8}
-    candidates = [SpectralCandidate(
-        candidate_index=0,
-        global_coupling=settings.reference_global_coupling,
-        speed_mm_per_ms=settings.reference_speed_mm_per_ms,
-        mu=settings.reference_mu,
-        a_scale=settings.reference_a_scale,
-        b_scale=settings.reference_b_scale,
-        fast_ratio=settings.reference_fast_ratio,
-        fast_fraction=settings.reference_fast_fraction,
-        noise_nsig=settings.reference_noise_nsig,
-        noise_tau_ms=settings.reference_noise_tau_ms,
-        dorsattn_time_contrast=settings.reference_dorsattn_time_contrast,
-    )]
-    candidates.extend(
+    reference = np.asarray(
+        [
+            settings.reference_global_coupling,
+            settings.reference_speed_mm_per_ms,
+            settings.reference_mu,
+            settings.reference_a_scale,
+            settings.reference_b_scale,
+            settings.reference_fast_ratio,
+            settings.reference_fast_fraction,
+            settings.reference_noise_nsig,
+            settings.reference_noise_tau_ms,
+            settings.reference_dorsattn_time_contrast,
+            settings.reference_visual_time_contrast,
+            settings.reference_default_noise_contrast,
+            settings.reference_visual_noise_contrast,
+            settings.reference_network_noise_mode_1,
+            settings.reference_network_noise_mode_2,
+            settings.reference_default_dorsattn_weight_contrast,
+            settings.reference_default_salventattn_weight_contrast,
+        ],
+        dtype=float,
+    )
+    reference_unit = np.empty_like(reference)
+    for column, bounds in enumerate(ranges):
+        if column in logarithmic:
+            reference_unit[column] = np.log(
+                reference[column] / bounds[0]
+            ) / np.log(bounds[1] / bounds[0])
+        else:
+            reference_unit[column] = (
+                reference[column] - bounds[0]
+            ) / (bounds[1] - bounds[0])
+
+    def sobol(count: int, dimensions: int, seed: int) -> np.ndarray:
+        engine = qmc.Sobol(d=dimensions, scramble=True, seed=seed)
+        exponent = int(np.ceil(np.log2(max(count, 1))))
+        return engine.random_base2(exponent)[:count]
+
+    if settings.strategy == "factorized":
+        global_count = settings.global_samples
+        spatial_count = settings.spatial_samples
+        global_unit = sobol(global_count, 9, settings.seed)
+        spatial_dimensions = len(PARAMETER_NAMES) - 9
+        spatial_unit = sobol(
+            spatial_count, spatial_dimensions, settings.seed + 104729
+        )
+        global_unit[0] = reference_unit[:9]
+        spatial_unit[0] = reference_unit[9:]
+        unit = np.asarray(
+            [
+                np.concatenate((global_row, spatial_row))
+                for global_row in global_unit
+                for spatial_row in spatial_unit
+            ]
+        )
+    else:
+        unit = sobol(settings.samples, len(PARAMETER_NAMES), settings.seed)
+        unit[0] = reference_unit
+
+    values = np.empty_like(unit)
+    for column, bounds in enumerate(ranges):
+        values[:, column] = [
+            _log(value, bounds)
+            if column in logarithmic
+            else _linear(value, bounds)
+            for value in unit[:, column]
+        ]
+    # Keep one exact reference state in every design for regression tests and
+    # for a stable biological baseline across calibration/production banks.
+    return [
         SpectralCandidate(
-            candidate_index=index + 1,
+            candidate_index=index,
             **{
-                name: (
-                    _log(row[column], ranges[column])
-                    if column in logarithmic
-                    else _linear(row[column], ranges[column])
-                )
+                name: float(values[index, column])
                 for column, name in enumerate(PARAMETER_NAMES)
             },
         )
-        for index, row in enumerate(unit)
-    )
-    return candidates[: settings.samples]
+        for index in range(settings.samples)
+    ]
 
 
 def normalized_spectral_parameters(
@@ -114,6 +183,13 @@ def normalized_spectral_parameters(
         settings.noise_nsig_range,
         settings.noise_tau_ms_range,
         settings.dorsattn_time_contrast_range,
+        settings.visual_time_contrast_range,
+        settings.default_noise_contrast_range,
+        settings.visual_noise_contrast_range,
+        settings.network_noise_mode_1_range,
+        settings.network_noise_mode_2_range,
+        settings.default_dorsattn_weight_contrast_range,
+        settings.default_salventattn_weight_contrast_range,
     )
     for column, bounds in enumerate(ranges):
         if column in {7, 8}:

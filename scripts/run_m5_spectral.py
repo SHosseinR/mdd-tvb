@@ -24,6 +24,14 @@ def main() -> None:
     )
     parser.add_argument("--max-subjects-per-group", type=int, default=None)
     parser.add_argument("--design-samples", type=int, default=None)
+    parser.add_argument(
+        "--backend", choices=("tvb", "jax"), default="tvb",
+        help="Integration backend for the simulation-bank stage",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=64,
+        help="Number of candidate/replicate simulations per JAX batch",
+    )
     args = parser.parse_args()
     config = load_spectral_m5_config(args.config)
     fitting = validation = bank = None
@@ -32,7 +40,14 @@ def main() -> None:
             config, args.max_subjects_per_group
         )
     if "bank" in args.stages:
-        bank = build_spectral_simulation_bank(config, args.design_samples)
+        if args.backend == "jax":
+            from mdd_tvb.jax_spectral_bank import build_spectral_simulation_bank_jax
+
+            bank = build_spectral_simulation_bank_jax(
+                config, args.design_samples, batch_size=args.batch_size
+            )
+        else:
+            bank = build_spectral_simulation_bank(config, args.design_samples)
     if "fit" in args.stages:
         fit_spectral_subjects(config, fitting, validation, bank)
 
