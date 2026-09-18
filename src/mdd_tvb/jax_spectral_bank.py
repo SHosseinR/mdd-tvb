@@ -22,7 +22,11 @@ from .spectral_bank import (
 )
 from .spectral_config import SpectralM5Config
 from .spectral_features import estimate_cross_spectrum
-from .spectral_parameterization import PARAMETER_NAMES, make_spectral_design
+from .spectral_parameterization import (
+    PARAMETER_NAMES,
+    SpectralCandidate,
+    make_spectral_design,
+)
 
 
 def _observation_gain(baseline: Any, connectome: Any) -> np.ndarray:
@@ -100,6 +104,7 @@ def build_spectral_simulation_bank_jax(
     *,
     batch_size: int = 64,
     precision: str = "float32",
+    candidates: list[SpectralCandidate] | None = None,
 ) -> SpectralSimulationBank:
     """Build the same bank as the TVB path, batching candidates on JAX.
 
@@ -116,11 +121,13 @@ def build_spectral_simulation_bank_jax(
         if design_samples is None
         else replace(config.design, samples=design_samples)
     )
+    candidates = candidates or make_spectral_design(design)
+    if len(candidates) != design.samples:
+        design = replace(design, samples=len(candidates))
     working = replace(config, design=design)
     baseline = load_config(config.paths.baseline_config)
     connectome = load_connectome(baseline.paths, baseline.connectivity)
     networks = network_labels(connectome.region_labels)
-    candidates = make_spectral_design(design)
     tasks = [
         (candidate, replicate)
         for candidate in candidates

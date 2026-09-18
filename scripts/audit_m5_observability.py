@@ -107,11 +107,20 @@ def _prior_cost(
     return result
 
 
-def run_audit(config_path: Path) -> dict[str, object]:
+def run_audit(
+    config_path: Path,
+    *,
+    empirical_dir: Path | None = None,
+    bank_path: Path | None = None,
+    output_dir: Path | None = None,
+    fit_summary_path: Path | None = None,
+) -> dict[str, object]:
     config = load_spectral_m5_config(config_path)
-    empirical_dir = config.paths.output_dir / "empirical"
-    bank_dir = config.paths.output_dir / "bank"
-    output_dir = config.paths.output_dir / "observability"
+    empirical_dir = empirical_dir or config.paths.output_dir / "empirical"
+    bank_path = bank_path or (
+        config.paths.output_dir / "bank" / "spectral_simulation_bank.npz"
+    )
+    output_dir = output_dir or config.paths.output_dir / "observability"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fitting = load_cross_spectral_collection(empirical_dir / "cross_spectra_fit.npz")
@@ -121,7 +130,7 @@ def run_audit(config_path: Path) -> dict[str, object]:
     reliability_b = load_cross_spectral_collection(
         empirical_dir / "cross_spectra_reliability_b.npz"
     )
-    bank = load_spectral_simulation_bank(bank_dir / "spectral_simulation_bank.npz")
+    bank = load_spectral_simulation_bank(bank_path)
     train_indices, _ = _stratified_split(
         fitting.groups, config.spectral.holdout_fraction, config.spectral.split_seed
     )
@@ -224,7 +233,9 @@ def run_audit(config_path: Path) -> dict[str, object]:
     coverage = pd.DataFrame(coverage_rows)
     coverage.to_csv(output_dir / "feature_block_coverage.csv", index=False)
 
-    fit_summary_path = config.paths.output_dir / "fit" / "fit_summary.json"
+    fit_summary_path = fit_summary_path or (
+        config.paths.output_dir / "fit" / "fit_summary.json"
+    )
     with fit_summary_path.open("r", encoding="utf-8") as handle:
         fit_summary = json.load(handle)
     temperature = float(
@@ -378,8 +389,18 @@ def run_audit(config_path: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=Path("configs/m5_spectral.toml"))
+    parser.add_argument("--empirical-dir", type=Path)
+    parser.add_argument("--bank", type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--fit-summary", type=Path)
     args = parser.parse_args()
-    result = run_audit(args.config)
+    result = run_audit(
+        args.config,
+        empirical_dir=args.empirical_dir,
+        bank_path=args.bank,
+        output_dir=args.output_dir,
+        fit_summary_path=args.fit_summary,
+    )
     print(json.dumps(result, indent=2))
 
 

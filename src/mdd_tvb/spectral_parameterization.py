@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from scipy.stats import qmc
 
 from .spectral_config import SpectralDesignConfig
@@ -66,8 +68,12 @@ def _log(value: float, bounds: tuple[float, float]) -> float:
     return float(np.exp(np.log(bounds[0]) + value * np.log(bounds[1] / bounds[0])))
 
 
-def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandidate]:
-    ranges = (
+def spectral_parameter_ranges(
+    settings: SpectralDesignConfig,
+) -> tuple[tuple[float, float], ...]:
+    """Return ranges in the exact order declared by ``PARAMETER_NAMES``."""
+
+    return (
         settings.global_coupling_range,
         settings.speed_range,
         settings.mu_range,
@@ -86,6 +92,55 @@ def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandida
         settings.default_dorsattn_weight_contrast_range,
         settings.default_salventattn_weight_contrast_range,
     )
+
+
+def candidates_from_parameter_matrix(
+    values: np.ndarray, settings: SpectralDesignConfig
+) -> list[SpectralCandidate]:
+    """Validate and convert an explicit adaptive design into candidates."""
+
+    matrix = np.asarray(values, dtype=float)
+    if matrix.ndim != 2 or matrix.shape[1] != len(PARAMETER_NAMES):
+        raise ValueError(
+            f"candidate matrix must have shape (samples, {len(PARAMETER_NAMES)})"
+        )
+    if matrix.shape[0] < 2 or not np.isfinite(matrix).all():
+        raise ValueError("candidate matrix must contain at least two finite rows")
+    for column, (name, bounds) in enumerate(
+        zip(PARAMETER_NAMES, spectral_parameter_ranges(settings), strict=True)
+    ):
+        if np.any(matrix[:, column] < bounds[0]) or np.any(
+            matrix[:, column] > bounds[1]
+        ):
+            raise ValueError(f"adaptive candidate {name} lies outside {bounds}")
+    return [
+        SpectralCandidate(
+            candidate_index=index,
+            **{
+                name: float(matrix[index, column])
+                for column, name in enumerate(PARAMETER_NAMES)
+            },
+        )
+        for index in range(len(matrix))
+    ]
+
+
+def load_spectral_candidate_table(
+    path: str | Path, settings: SpectralDesignConfig
+) -> list[SpectralCandidate]:
+    """Load an explicit candidate CSV while ignoring provenance columns."""
+
+    table = pd.read_csv(path)
+    missing = [name for name in PARAMETER_NAMES if name not in table]
+    if missing:
+        raise ValueError(f"candidate table is missing columns: {missing}")
+    return candidates_from_parameter_matrix(
+        table.loc[:, PARAMETER_NAMES].to_numpy(dtype=float), settings
+    )
+
+
+def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandidate]:
+    ranges = spectral_parameter_ranges(settings)
     logarithmic = {7, 8}
     reference = np.asarray(
         [
@@ -156,41 +211,14 @@ def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandida
         ]
     # Keep one exact reference state in every design for regression tests and
     # for a stable biological baseline across calibration/production banks.
-    return [
-        SpectralCandidate(
-            candidate_index=index,
-            **{
-                name: float(values[index, column])
-                for column, name in enumerate(PARAMETER_NAMES)
-            },
-        )
-        for index in range(settings.samples)
-    ]
+    return candidates_from_parameter_matrix(values, settings)
 
 
 def normalized_spectral_parameters(
     values: np.ndarray, settings: SpectralDesignConfig
 ) -> np.ndarray:
     matrix = np.asarray(values, dtype=float).copy()
-    ranges = (
-        settings.global_coupling_range,
-        settings.speed_range,
-        settings.mu_range,
-        settings.a_scale_range,
-        settings.b_scale_range,
-        settings.fast_ratio_range,
-        settings.fast_fraction_range,
-        settings.noise_nsig_range,
-        settings.noise_tau_ms_range,
-        settings.dorsattn_time_contrast_range,
-        settings.visual_time_contrast_range,
-        settings.default_noise_contrast_range,
-        settings.visual_noise_contrast_range,
-        settings.network_noise_mode_1_range,
-        settings.network_noise_mode_2_range,
-        settings.default_dorsattn_weight_contrast_range,
-        settings.default_salventattn_weight_contrast_range,
-    )
+    ranges = spectral_parameter_ranges(settings)
     for column, bounds in enumerate(ranges):
         if column in {7, 8}:
             transformed = np.log(matrix[:, column])
@@ -201,4 +229,29 @@ def normalized_spectral_parameters(
         matrix[:, column] = 2.0 * (
             transformed - bound_values.mean()
         ) / (bound_values[1] - bound_values[0])
+    return matrix
+
+
+def denormalized_spectral_parameters(
+    values: np.ndarray, settings: SpectralDesignConfig
+) -> np.ndarray:
+    """Invert ``normalized_spectral_parameters`` for adaptive proposals."""
+
+    matrix = np.asarray(values, dtype=float).copy()
+    if matrix.ndim != 2 or matrix.shape[1] != len(PARAMETER_NAMES):
+        raise ValueError("normalized parameter matrix has the wrong shape")
+    for column, bounds in enumerate(spectral_parameter_ranges(settings)):
+        if column in {7, 8}:
+            bound_values = np.log(bounds)
+            transformed = (
+                matrix[:, column] * (bound_values[1] - bound_values[0]) / 2.0
+                + bound_values.mean()
+            )
+            matrix[:, column] = np.exp(transformed)
+        else:
+            bound_values = np.asarray(bounds)
+            matrix[:, column] = (
+                matrix[:, column] * (bound_values[1] - bound_values[0]) / 2.0
+                + bound_values.mean()
+            )
     return matrix

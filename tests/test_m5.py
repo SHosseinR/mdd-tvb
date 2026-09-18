@@ -20,7 +20,12 @@ from mdd_tvb.spectral_features import (
     estimate_cross_spectrum,
     fit_spectral_transformer,
 )
-from mdd_tvb.spectral_parameterization import make_spectral_design
+from mdd_tvb.spectral_parameterization import (
+    candidates_from_parameter_matrix,
+    denormalized_spectral_parameters,
+    make_spectral_design,
+    normalized_spectral_parameters,
+)
 from mdd_tvb.spectral_fit import _posterior_csd
 
 
@@ -172,6 +177,26 @@ def test_factorized_design_repeats_global_and_spatial_subdesigns() -> None:
     assert np.unique(matrix[:, 9:], axis=0).shape[0] == 8
     assert np.allclose(matrix[0, :9], matrix[1, :9])
     assert np.allclose(matrix[0, 9:], matrix[8, 9:])
+
+
+def test_explicit_adaptive_design_round_trip_and_bounds() -> None:
+    config = load_spectral_m5_config(Path("configs/m5_spectral_pilot.toml"))
+    matrix = np.stack(
+        [candidate.numeric_vector() for candidate in make_spectral_design(config.design)]
+    )
+    normalized = normalized_spectral_parameters(matrix, config.design)
+    restored = denormalized_spectral_parameters(normalized, config.design)
+    explicit = candidates_from_parameter_matrix(restored, config.design)
+    assert np.allclose(restored, matrix)
+    assert len(explicit) == len(matrix)
+    invalid = restored.copy()
+    invalid[0, 0] = config.design.global_coupling_range[1] + 1.0
+    try:
+        candidates_from_parameter_matrix(invalid, config.design)
+    except ValueError as error:
+        assert "global_coupling" in str(error)
+    else:
+        raise AssertionError("out-of-range adaptive candidate was accepted")
 
 
 def test_compact_posterior_csd_matches_dense_state_average() -> None:

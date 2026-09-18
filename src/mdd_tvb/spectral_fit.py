@@ -162,6 +162,12 @@ def _channel_log_power(csd: np.ndarray) -> np.ndarray:
 
 
 def _complex_coherency(csd: np.ndarray) -> np.ndarray:
+    return _connectivity_metric(csd, "complex_coherency")
+
+
+def _connectivity_metric(csd: np.ndarray, metric: str) -> np.ndarray:
+    """Return a channel-level coherency summary for group-effect auditing."""
+
     matrices = np.asarray(csd)
     diagonal = np.maximum(
         np.real(np.diagonal(matrices, axis1=-2, axis2=-1)),
@@ -173,7 +179,15 @@ def _complex_coherency(csd: np.ndarray) -> np.ndarray:
     coherency = matrices / denominator
     upper = np.triu_indices(matrices.shape[-1], k=1)
     selected = coherency[..., upper[0], upper[1]]
-    return np.concatenate((np.real(selected), np.imag(selected)), axis=-1)
+    if metric == "complex_coherency":
+        return np.concatenate((np.real(selected), np.imag(selected)), axis=-1)
+    if metric == "imaginary_coherency":
+        return np.imag(selected)
+    if metric == "lagged_coherency":
+        return np.imag(selected) / np.sqrt(
+            np.maximum(1.0 - np.real(selected) ** 2, 1e-8)
+        )
+    raise ValueError(f"Unknown cross metric: {metric}")
 
 
 def _expand_bank(
@@ -463,7 +477,8 @@ def _plot_group_effects(
     validation: CrossSpectralCollection,
     predictions: np.ndarray,
     indices: np.ndarray | None = None,
-) -> dict[str, float]:
+    cross_metric: str = "complex_coherency",
+) -> dict[str, Any]:
     selected_indices = (
         np.arange(len(validation.subject_ids)) if indices is None else np.asarray(indices)
     )
@@ -478,10 +493,20 @@ def _plot_group_effects(
     predicted_power = _channel_log_power(selected_predictions)
     empirical_effect = _group_difference(empirical_power, selected_groups, first, second)
     predicted_effect = _group_difference(predicted_power, selected_groups, first, second)
-    empirical_coherency = _complex_coherency(selected_empirical)
-    predicted_coherency = _complex_coherency(selected_predictions)
-    empirical_cross_effect = _group_difference(empirical_coherency, selected_groups, first, second)
-    predicted_cross_effect = _group_difference(predicted_coherency, selected_groups, first, second)
+    empirical_connectivity = _connectivity_metric(selected_empirical, cross_metric)
+    predicted_connectivity = _connectivity_metric(selected_predictions, cross_metric)
+    empirical_cross_effect = _group_difference(
+        empirical_connectivity, selected_groups, first, second
+    )
+    predicted_cross_effect = _group_difference(
+        predicted_connectivity, selected_groups, first, second
+    )
+    empirical_complex_effect = _group_difference(
+        _complex_coherency(selected_empirical), selected_groups, first, second
+    )
+    predicted_complex_effect = _group_difference(
+        _complex_coherency(selected_predictions), selected_groups, first, second
+    )
     alpha = (validation.frequency_hz >= 8.0) & (validation.frequency_hz < 13.0)
     empirical_alpha_subject = empirical_power[:, alpha].mean(axis=1)
     predicted_alpha_subject = predicted_power[:, alpha].mean(axis=1)
@@ -494,11 +519,14 @@ def _plot_group_effects(
         predicted_alpha_subject, selected_groups, first, second
     )
     metrics = {
+        "connectivity_metric": cross_metric,
         "channel_frequency_log_power_effect_correlation": _safe_correlation(empirical_effect, predicted_effect),
         "alpha_topography_effect_correlation": _safe_correlation(empirical_alpha, predicted_alpha),
-        "complex_coherency_effect_correlation": _safe_correlation(empirical_cross_effect, predicted_cross_effect),
+        "fitted_connectivity_effect_correlation": _safe_correlation(empirical_cross_effect, predicted_cross_effect),
+        "complex_coherency_effect_correlation": _safe_correlation(empirical_complex_effect, predicted_complex_effect),
         "channel_frequency_log_power_effect_norm_retained": float(np.linalg.norm(predicted_effect) / max(np.linalg.norm(empirical_effect), np.finfo(float).tiny)),
-        "complex_coherency_effect_norm_retained": float(np.linalg.norm(predicted_cross_effect) / max(np.linalg.norm(empirical_cross_effect), np.finfo(float).tiny)),
+        "fitted_connectivity_effect_norm_retained": float(np.linalg.norm(predicted_cross_effect) / max(np.linalg.norm(empirical_cross_effect), np.finfo(float).tiny)),
+        "complex_coherency_effect_norm_retained": float(np.linalg.norm(predicted_complex_effect) / max(np.linalg.norm(empirical_complex_effect), np.finfo(float).tiny)),
         "alpha_topography_effect_norm_retained": float(np.linalg.norm(predicted_alpha) / max(np.linalg.norm(empirical_alpha), np.finfo(float).tiny)),
     }
     fig, axes = plt.subplots(1, 3, figsize=(17, 5), constrained_layout=True)
@@ -514,7 +542,10 @@ def _plot_group_effects(
     axes[1].set_title(f"Alpha topography effect\nr={metrics['alpha_topography_effect_correlation']:.3f}")
     axes[1].legend(fontsize=8)
     axes[2].scatter(empirical_cross_effect.ravel(), predicted_cross_effect.ravel(), s=7, alpha=0.35)
-    axes[2].set_title(f"Complex coherency effect\nr={metrics['complex_coherency_effect_correlation']:.3f}")
+    label = cross_metric.replace("_", " ").title()
+    axes[2].set_title(
+        f"{label} effect\nr={metrics['fitted_connectivity_effect_correlation']:.3f}"
+    )
     axes[2].set_xlabel("Empirical unseen effect")
     axes[2].set_ylabel("Posterior prediction")
     fig.suptitle("Subject-holdout group-effect preservation—not diagnosis prediction", fontsize=14)
@@ -930,6 +961,7 @@ def fit_spectral_subjects(
         validation,
         prediction_array,
         holdout_indices,
+        config.spectral.cross_metric,
     )
     recovery_correlations = recovery_summary.get(
         "parameter_recovery_correlations", {}
@@ -1026,7 +1058,7 @@ def fit_spectral_subjects(
         ),
         "holdout_coherency_group_effect_preserved": bool(
             group_effect_metrics.get(
-                "complex_coherency_effect_correlation", 0.0
+                "fitted_connectivity_effect_correlation", 0.0
             )
             >= 0.10
         ),
@@ -1050,6 +1082,7 @@ def fit_spectral_subjects(
         "neural_model": "two locally coupled Jansen-Rit generators per Schaefer parcel; shared delayed TVB structural network",
         "objective": {
             "data": "channel-resolved 2-40 Hz complex cross-spectral density",
+            "connectivity_metric": config.spectral.cross_metric,
             "sensor_reduction": f"{config.spectral.sensor_modes} label-blind spatial modes learned from training subjects",
             "summary_reduction": {
                 "periodic_residual_plus_aperiodic_exponent_coordinates": int(
@@ -1200,7 +1233,7 @@ def fit_spectral_subjects(
             "- power / alpha-topography / coherency group-effect correlations: "
             f"{group_effect_metrics.get('channel_frequency_log_power_effect_correlation', np.nan):.3f} / "
             f"{group_effect_metrics.get('alpha_topography_effect_correlation', np.nan):.3f} / "
-            f"{group_effect_metrics.get('complex_coherency_effect_correlation', np.nan):.3f}"
+            f"{group_effect_metrics.get('fitted_connectivity_effect_correlation', np.nan):.3f}"
         ),
         (
             "- structural-mode synthetic-recovery correlations: "

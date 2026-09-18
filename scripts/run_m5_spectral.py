@@ -9,12 +9,19 @@ from mdd_tvb.spectral_bank import build_spectral_simulation_bank
 from mdd_tvb.spectral_config import load_spectral_m5_config
 from mdd_tvb.spectral_empirical import extract_cross_spectral_collection
 from mdd_tvb.spectral_fit import fit_spectral_subjects
+from mdd_tvb.spectral_parameterization import load_spectral_candidate_table
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config", type=Path, default=Path("configs/m5_spectral_pilot.toml")
+    )
+    parser.add_argument(
+        "--candidate-table",
+        type=Path,
+        default=None,
+        help="Explicit adaptive candidate CSV; overrides the configured design",
     )
     parser.add_argument(
         "--stages",
@@ -34,6 +41,11 @@ def main() -> None:
     )
     args = parser.parse_args()
     config = load_spectral_m5_config(args.config)
+    candidates = (
+        load_spectral_candidate_table(args.candidate_table, config.design)
+        if args.candidate_table is not None
+        else None
+    )
     fitting = validation = bank = None
     if "extract" in args.stages:
         fitting, validation = extract_cross_spectral_collection(
@@ -44,10 +56,15 @@ def main() -> None:
             from mdd_tvb.jax_spectral_bank import build_spectral_simulation_bank_jax
 
             bank = build_spectral_simulation_bank_jax(
-                config, args.design_samples, batch_size=args.batch_size
+                config,
+                args.design_samples,
+                batch_size=args.batch_size,
+                candidates=candidates,
             )
         else:
-            bank = build_spectral_simulation_bank(config, args.design_samples)
+            bank = build_spectral_simulation_bank(
+                config, args.design_samples, candidates=candidates
+            )
     if "fit" in args.stages:
         fit_spectral_subjects(config, fitting, validation, bank)
 

@@ -194,6 +194,7 @@ def simulate_spectral_candidate(
 def build_spectral_simulation_bank(
     config: SpectralM5Config,
     design_samples: int | None = None,
+    candidates: list[SpectralCandidate] | None = None,
 ) -> SpectralSimulationBank:
     design_settings = (
         config.design
@@ -201,7 +202,10 @@ def build_spectral_simulation_bank(
         else replace(config.design, samples=design_samples)
     )
     working = replace(config, design=design_settings)
-    candidates = make_spectral_design(design_settings)
+    candidates = candidates or make_spectral_design(design_settings)
+    if len(candidates) != design_settings.samples:
+        design_settings = replace(design_settings, samples=len(candidates))
+        working = replace(config, design=design_settings)
     tasks = [
         (candidate, replicate)
         for candidate in candidates
