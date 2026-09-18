@@ -61,6 +61,7 @@ class SpectralDesignConfig:
     n_jobs: int = 6
     seed: int = 161803
     simulation_seed: int = 29009
+    fit_structural_modes: bool = True
     global_coupling_range: tuple[float, float] = (4.0, 9.0)
     speed_range: tuple[float, float] = (3.0, 10.0)
     mu_range: tuple[float, float] = (0.19, 0.27)
@@ -214,6 +215,7 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         n_jobs=int(design_raw.get("n_jobs", 6)),
         seed=int(design_raw.get("seed", 161803)),
         simulation_seed=int(design_raw.get("simulation_seed", 29009)),
+        fit_structural_modes=bool(design_raw.get("fit_structural_modes", True)),
         global_coupling_range=_pair(design_raw.get("global_coupling_range", [4.0, 9.0]), "global_coupling_range"),
         speed_range=_pair(design_raw.get("speed_range", [3.0, 10.0]), "speed_range"),
         mu_range=_pair(design_raw.get("mu_range", [0.19, 0.27]), "mu_range"),

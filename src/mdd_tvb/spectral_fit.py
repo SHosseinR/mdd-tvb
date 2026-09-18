@@ -562,6 +562,7 @@ def _plot_heldout_parameter_effects(
     groups: tuple[str, ...],
     recovery_correlations: dict[str, float],
     seed: int,
+    parameter_names: tuple[str, ...] = PARAMETER_NAMES,
 ) -> pd.DataFrame:
     """Report diagnosis effects only after fitting, with recovery guardrails."""
 
@@ -591,7 +592,7 @@ def _plot_heldout_parameter_effects(
         "default_incident_weight_contrast",
         "dorsattn_salventattn_weight_balance",
     }
-    for name in PARAMETER_NAMES:
+    for name in parameter_names:
         column = f"{name}_posterior_mean"
         first_values = selected.loc[selected["group"] == first, column].to_numpy()
         second_values = selected.loc[selected["group"] == second, column].to_numpy()
@@ -724,7 +725,14 @@ def fit_spectral_subjects(
     pooled_feature = fit_features[train_indices].mean(axis=0)
     normalized = normalized_spectral_parameters(bank.parameters, config.design)
     neural_state_parameters = normalized[expanded["candidate_index"]]
-    prior_cost = config.posterior.prior_strength * np.mean(neural_state_parameters**2, axis=1)
+    active_parameter_count = (
+        len(PARAMETER_NAMES)
+        if config.design.fit_structural_modes
+        else len(PARAMETER_NAMES) - 2
+    )
+    prior_cost = config.posterior.prior_strength * np.mean(
+        neural_state_parameters[:, :active_parameter_count] ** 2, axis=1
+    )
     spatial_columns = [
         PARAMETER_NAMES.index(name)
         for name in (
@@ -746,9 +754,10 @@ def fit_spectral_subjects(
     prior_cost += config.posterior.spatial_prior_strength * np.mean(
         neural_state_parameters[:, spatial_columns] ** 2, axis=1
     )
-    prior_cost += config.posterior.structural_prior_strength * np.mean(
-        neural_state_parameters[:, structural_columns] ** 2, axis=1
-    )
+    if config.design.fit_structural_modes:
+        prior_cost += config.posterior.structural_prior_strength * np.mean(
+            neural_state_parameters[:, structural_columns] ** 2, axis=1
+        )
 
     temperature, temperature_table = _select_temperature(
         state_features,
@@ -933,10 +942,15 @@ def fit_spectral_subjects(
         }
     ).to_csv(fit_dir / "data_split.csv", index=False)
 
+    reported_parameter_names = (
+        PARAMETER_NAMES
+        if config.design.fit_structural_modes
+        else PARAMETER_NAMES[:-2]
+    )
     group_rows: list[dict[str, Any]] = []
     for group in config.empirical.groups:
         selected = table[table["group"] == group]
-        for name in PARAMETER_NAMES:
+        for name in reported_parameter_names:
             values = selected[f"{name}_posterior_mean"].to_numpy()
             group_rows.append(
                 {
@@ -972,6 +986,7 @@ def fit_spectral_subjects(
         config.empirical.groups,
         recovery_correlations,
         config.spectral.split_seed + 1,
+        reported_parameter_names,
     )
     parameter_effects.to_csv(
         fit_dir / "heldout_group_parameter_effects.csv", index=False
@@ -1069,9 +1084,12 @@ def fit_spectral_subjects(
             sum(float(value) >= 0.50 for value in recovery_correlations.values())
             >= 3
         ),
-        "both_structural_modes_recoverable_in_synthetic_data": bool(
-            len(structural_recovery) == 2
-            and min(structural_recovery) >= 0.30
+        "structural_modes_recoverable_or_fixed_from_calibration": bool(
+            not config.design.fit_structural_modes
+            or (
+                len(structural_recovery) == 2
+                and min(structural_recovery) >= 0.30
+            )
         ),
     }
     accepted = all(acceptance_gates.values())
@@ -1110,8 +1128,10 @@ def fit_spectral_subjects(
             "absolute_amplitude": "per-sensor-mode intercepts removed as observation-gain nuisances",
             "dc": "excluded by demeaning and the 2-Hz lower fit bound",
             "structural_weights": (
-                "two symmetric mean-strength-preserving network-pair modes, bounded "
-                "to +/-10% and given a stronger Gaussian shrinkage prior"
+                "two bounded, mean-strength-preserving network modes"
+                if config.design.fit_structural_modes
+                else "common connectome fixed at reference after both bounded "
+                "network modes failed diagnosis-blind synthetic recovery"
             ),
             "spatial_physiology": (
                 "visual/default noise and visual/dorsal-attention time contrasts, "
@@ -1236,8 +1256,13 @@ def fit_spectral_subjects(
             f"{group_effect_metrics.get('fitted_connectivity_effect_correlation', np.nan):.3f}"
         ),
         (
-            "- structural-mode synthetic-recovery correlations: "
-            + " / ".join(f"{value:.3f}" for value in structural_recovery)
+            "- structural policy: "
+            + (
+                "fitted; recovery correlations "
+                + " / ".join(f"{value:.3f}" for value in structural_recovery)
+                if config.design.fit_structural_modes
+                else "fixed common connectome (calibration recovery failed)"
+            )
         ),
         "",
         "## Gates",
@@ -1247,7 +1272,11 @@ def fit_spectral_subjects(
             for name, passed in acceptance_gates.items()
         ],
         "",
-        "Stimulation optimization remains blocked while required gates fail.",
+        (
+            "M5 is eligible for the later stimulation stage."
+            if accepted
+            else "Stimulation optimization remains blocked while required gates fail."
+        ),
     ]
     (fit_dir / "ACCEPTANCE.md").write_text(
         "\n".join(report_lines) + "\n", encoding="utf-8"

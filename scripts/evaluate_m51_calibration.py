@@ -158,8 +158,19 @@ def main() -> None:
             nested["fraction_beating_pooled_null_on_validation"] > 0.50
         ),
     }
+    fit_gates_pass = all(
+        passed
+        for name, passed in gates.items()
+        if name != "both_structural_modes_recoverable"
+    )
+    if all(gates.values()):
+        status = "promote_to_production"
+    elif fit_gates_pass and not gates["both_structural_modes_recoverable"]:
+        status = "promote_fixed_connectome"
+    else:
+        status = "revise"
     decision = {
-        "status": "promote_to_production" if all(gates.values()) else "revise",
+        "status": status,
         "old_65_subject_holdout_read": False,
         "development_subjects": int(len(development)),
         "excluded_old_holdout_subjects": int(len(old_holdout)),
@@ -169,6 +180,11 @@ def main() -> None:
         "metrics": nested,
         "baseline_nested_lagged": baseline.to_dict(),
         "minimum_structural_recovery_correlation": structural_minimum,
+        "production_structural_policy": (
+            "fit_bounded_modes"
+            if gates["both_structural_modes_recoverable"]
+            else "fix_common_connectome_at_reference"
+        ),
         "gates": gates,
     }
     decision_path = output_dir / "CALIBRATION_DECISION.json"

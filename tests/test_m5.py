@@ -203,6 +203,17 @@ def test_factorized_design_repeats_global_and_spatial_subdesigns() -> None:
     assert np.allclose(matrix[0, :9], matrix[1, :9])
     assert np.allclose(matrix[0, 9:], matrix[8, 9:])
 
+    fixed = np.stack(
+        [
+            candidate.numeric_vector()
+            for candidate in make_spectral_design(
+                replace(settings, fit_structural_modes=False)
+            )
+        ]
+    )
+    assert np.allclose(fixed[:, -2:], 0.0)
+    assert np.unique(fixed[:, 9:-2], axis=0).shape[0] == 8
+
 
 def test_explicit_adaptive_design_round_trip_and_bounds() -> None:
     config = load_spectral_m5_config(Path("configs/m5_spectral_pilot.toml"))

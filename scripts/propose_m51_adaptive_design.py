@@ -71,7 +71,10 @@ def main() -> None:
         config.paths.output_dir / "evaluation" / "CALIBRATION_DECISION.json"
     )
     decision = json.loads(decision_path.read_text(encoding="utf-8"))
-    if decision.get("status") != "promote_to_production" and not args.force:
+    if decision.get("status") not in {
+        "promote_to_production",
+        "promote_fixed_connectome",
+    } and not args.force:
         raise RuntimeError(
             "Calibration did not pass promotion gates; adaptive production "
             "design was not generated"
@@ -118,9 +121,14 @@ def main() -> None:
     broad = np.stack(
         [candidate.numeric_vector() for candidate in make_spectral_design(broad_settings)]
     )
+    fix_structural = decision.get("status") == "promote_fixed_connectome"
+    if fix_structural:
+        broad[:, -2:] = 0.0
 
     normalized_bank = normalized_spectral_parameters(bank.parameters, config.design)
     anchor_values = normalized_bank[anchor_indices]
+    if fix_structural:
+        anchor_values[:, -2:] = 0.0
     local_count = args.samples - args.broad_samples
     engine = qmc.Sobol(d=len(PARAMETER_NAMES), scramble=True, seed=args.seed + 1)
     exponent = int(np.ceil(np.log2(local_count)))
@@ -131,6 +139,8 @@ def main() -> None:
         + [0.25] * 2,
         dtype=float,
     )
+    if fix_structural:
+        radius[-2:] = 0.0
     local_normalized = np.empty_like(offsets)
     local_anchor = np.empty(local_count, dtype=int)
     for row in range(local_count):
@@ -170,6 +180,8 @@ def main() -> None:
             2.0 * filler_engine.random_base2(filler_exponent)[:missing] - 1.0
         )
         filler = denormalized_spectral_parameters(filler_normalized, config.design)
+        if fix_structural:
+            filler[:, -2:] = 0.0
         combined = np.vstack((combined, filler))
         origins = np.concatenate((origins, np.asarray(["broad_fill"] * missing)))
         anchor_column = np.concatenate(
@@ -193,6 +205,12 @@ def main() -> None:
         "status": "completed",
         "diagnosis_labels_used": False,
         "old_65_subject_holdout_used": False,
+        "structural_modes_fitted": not fix_structural,
+        "structural_policy": (
+            "bounded_modes"
+            if not fix_structural
+            else "common_connectome_fixed_at_reference_after_failed_recovery"
+        ),
         "samples": int(len(table)),
         "broad_samples": int(np.sum(origins == "broad")),
         "adaptive_local_samples": int(np.sum(origins == "adaptive_local")),

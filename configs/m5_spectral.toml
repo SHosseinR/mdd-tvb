@@ -1,7 +1,7 @@
 [paths]
 baseline_config = "configs/baseline.toml"
 dataset_root = "D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1/output/preprocessed_tdbrain_restEC_set2"
-output_dir = "outputs/m5_spectral"
+output_dir = "outputs/m5_spectral_m51_production"
 
 [empirical]
 groups = ["Healthy", "MDD"]
@@ -28,7 +28,7 @@ reliability_max_cross_coordinates = 16
 reliability_max_topography_coordinates = 8
 reliability_min_coordinates = 8
 diagonal_shrinkage = 0.05
-cross_metric = "complex_coherency"
+cross_metric = "lagged_coherency"
 # Training-only Pareto point: materially improves direct alpha topography while
 # keeping total unseen training-subject cost below the pooled empirical null.
 auto_weight = 0.45
@@ -38,10 +38,10 @@ holdout_fraction = 0.20
 split_seed = 20260913
 
 [design]
-samples = 512
+samples = 2048
 strategy = "factorized"
 global_samples = 16
-spatial_samples = 32
+spatial_samples = 128
 replicates = 3
 # 2 s burn-in followed by 60 s analysed data per random seed.
 duration_ms = 62000.0
@@ -50,6 +50,10 @@ dt_ms = 0.5
 n_jobs = 6
 seed = 161803
 simulation_seed = 29009
+# Two diagnosis-blind calibration banks found that +/-10% network weight modes
+# were not recoverable from resting scalp EEG.  Keep the validated common
+# connectome fixed rather than estimating prior-driven subject differences.
+fit_structural_modes = false
 global_coupling_range = [1.0, 20.0]
 speed_range = [2.0, 12.0]
 mu_range = [0.17, 0.30]
@@ -59,8 +63,8 @@ fast_ratio_range = [1.4, 3.0]
 fast_fraction_range = [0.05, 0.55]
 noise_nsig_range = [0.0005, 0.040]
 noise_tau_ms_range = [0.25, 6.0]
-dorsattn_time_contrast_range = [-0.15, 0.15]
-visual_time_contrast_range = [-0.15, 0.15]
+dorsattn_time_contrast_range = [-0.30, 0.30]
+visual_time_contrast_range = [-0.30, 0.30]
 default_noise_contrast_range = [-0.50, 0.50]
 visual_noise_contrast_range = [-0.50, 0.50]
 network_noise_mode_1_range = [-0.35, 0.35]
@@ -99,9 +103,7 @@ source_background_fractions = [0.0]
 source_background_exponents = [1.0]
 prior_strength = 0.02
 spatial_prior_strength = 0.05
-# Training-only observability audit: 0.20 suppressed recoverable structural
-# effects below the declared recovery gate; 0.05 retains conservative shrinkage
-# while both +/-10% modes remain synthetically recoverable.
-structural_prior_strength = 0.05
+# Inactive because production candidates fix both structural modes at zero.
+structural_prior_strength = 0.0
 temperature_multipliers = [0.005, 0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.0]
 minimum_temperature = 0.0001

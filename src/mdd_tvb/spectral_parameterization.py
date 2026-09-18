@@ -209,6 +209,11 @@ def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandida
             else _linear(value, bounds)
             for value in unit[:, column]
         ]
+    if not settings.fit_structural_modes:
+        # Resting scalp EEG could not recover either bounded connectome mode
+        # in two preregistered calibration attempts.  Keep the common
+        # connectome fixed instead of reporting prior-driven subject weights.
+        values[:, -2:] = reference[-2:]
     # Keep one exact reference state in every design for regression tests and
     # for a stable biological baseline across calibration/production banks.
     return candidates_from_parameter_matrix(values, settings)
@@ -254,4 +259,7 @@ def denormalized_spectral_parameters(
                 matrix[:, column] * (bound_values[1] - bound_values[0]) / 2.0
                 + bound_values.mean()
             )
+        # Floating-point inversion can overshoot an exact endpoint by one ULP
+        # (for example 0.30000000000000004 for an upper bound of 0.30).
+        matrix[:, column] = np.clip(matrix[:, column], bounds[0], bounds[1])
     return matrix
