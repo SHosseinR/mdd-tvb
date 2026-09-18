@@ -57,10 +57,7 @@ def main() -> None:
     parser.add_argument(
         "--bank",
         type=Path,
-        default=Path(
-            "outputs/m5_spectral_m51_calibration/bank/"
-            "spectral_simulation_bank.npz"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--empirical-dir",
@@ -70,11 +67,15 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("outputs/m5_spectral_m51_calibration/evaluation"),
+        default=None,
     )
     args = parser.parse_args()
 
     config = load_spectral_m5_config(args.config)
+    bank_path = args.bank or (
+        config.paths.output_dir / "bank" / "spectral_simulation_bank.npz"
+    )
+    output_dir = args.output_dir or (config.paths.output_dir / "evaluation")
     fitting_full = load_cross_spectral_collection(
         args.empirical_dir / "cross_spectra_fit.npz"
     )
@@ -96,7 +97,7 @@ def main() -> None:
     validation = _subset(validation_full, development)
     reliability_a = _subset(reliability_a_full, development)
     reliability_b = _subset(reliability_b_full, development)
-    bank = load_spectral_simulation_bank(args.bank)
+    bank = load_spectral_simulation_bank(bank_path)
 
     working = replace(
         config,
@@ -104,7 +105,7 @@ def main() -> None:
             config.spectral,
             split_seed=config.spectral.split_seed + 101,
         ),
-        paths=replace(config.paths, output_dir=args.output_dir),
+        paths=replace(config.paths, output_dir=output_dir),
     )
     fit_spectral_subjects(
         working,
@@ -114,15 +115,15 @@ def main() -> None:
         reliability_a,
         reliability_b,
     )
-    summary_path = args.output_dir / "fit" / "fit_summary.json"
+    summary_path = output_dir / "fit" / "fit_summary.json"
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     nested = summary["validation"]["holdout"]
 
     audit = run_audit(
         args.config,
         empirical_dir=args.empirical_dir,
-        bank_path=args.bank,
-        output_dir=args.output_dir / "observability",
+        bank_path=bank_path,
+        output_dir=output_dir / "observability",
         fit_summary_path=summary_path,
     )
     baseline_table = pd.read_csv(
@@ -136,8 +137,8 @@ def main() -> None:
     ].iloc[0]
     structural = audit["selected_prior_recovery"]
     structural_minimum = min(
-        float(structural["default_dorsattn_weight_contrast"]),
-        float(structural["default_salventattn_weight_contrast"]),
+        float(structural["default_incident_weight_contrast"]),
+        float(structural["dorsattn_salventattn_weight_balance"]),
     )
     gates = {
         "nested_total_not_worse_than_old_lagged_bank": bool(
@@ -170,7 +171,7 @@ def main() -> None:
         "minimum_structural_recovery_correlation": structural_minimum,
         "gates": gates,
     }
-    decision_path = args.output_dir / "CALIBRATION_DECISION.json"
+    decision_path = output_dir / "CALIBRATION_DECISION.json"
     decision_path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
     lines = [
         f"# M5.1 calibration: {decision['status']}",
@@ -182,7 +183,7 @@ def main() -> None:
         f"- {'PASS' if passed else 'FAIL'}: {name.replace('_', ' ')}"
         for name, passed in gates.items()
     )
-    (args.output_dir / "CALIBRATION_DECISION.md").write_text(
+    (output_dir / "CALIBRATION_DECISION.md").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     )
     print(json.dumps(decision, indent=2))

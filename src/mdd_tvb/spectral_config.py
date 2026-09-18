@@ -76,8 +76,8 @@ class SpectralDesignConfig:
     visual_noise_contrast_range: tuple[float, float] = (-0.50, 0.50)
     network_noise_mode_1_range: tuple[float, float] = (-0.35, 0.35)
     network_noise_mode_2_range: tuple[float, float] = (-0.35, 0.35)
-    default_dorsattn_weight_contrast_range: tuple[float, float] = (-0.10, 0.10)
-    default_salventattn_weight_contrast_range: tuple[float, float] = (-0.10, 0.10)
+    default_incident_weight_contrast_range: tuple[float, float] = (-0.10, 0.10)
+    dorsattn_salventattn_weight_balance_range: tuple[float, float] = (-0.10, 0.10)
     network_noise_mode_1: tuple[tuple[str, float], ...] = (
         ("Cont", -0.0809303268),
         ("Default", -0.1702062801),
@@ -112,8 +112,8 @@ class SpectralDesignConfig:
     reference_visual_noise_contrast: float = 0.0
     reference_network_noise_mode_1: float = 0.0
     reference_network_noise_mode_2: float = 0.0
-    reference_default_dorsattn_weight_contrast: float = 0.0
-    reference_default_salventattn_weight_contrast: float = 0.0
+    reference_default_incident_weight_contrast: float = 0.0
+    reference_dorsattn_salventattn_weight_balance: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -229,8 +229,8 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         visual_noise_contrast_range=_pair(design_raw.get("visual_noise_contrast_range", [-0.50, 0.50]), "visual_noise_contrast_range"),
         network_noise_mode_1_range=_pair(design_raw.get("network_noise_mode_1_range", [-0.35, 0.35]), "network_noise_mode_1_range"),
         network_noise_mode_2_range=_pair(design_raw.get("network_noise_mode_2_range", [-0.35, 0.35]), "network_noise_mode_2_range"),
-        default_dorsattn_weight_contrast_range=_pair(design_raw.get("default_dorsattn_weight_contrast_range", [-0.10, 0.10]), "default_dorsattn_weight_contrast_range"),
-        default_salventattn_weight_contrast_range=_pair(design_raw.get("default_salventattn_weight_contrast_range", [-0.10, 0.10]), "default_salventattn_weight_contrast_range"),
+        default_incident_weight_contrast_range=_pair(design_raw.get("default_incident_weight_contrast_range", [-0.10, 0.10]), "default_incident_weight_contrast_range"),
+        dorsattn_salventattn_weight_balance_range=_pair(design_raw.get("dorsattn_salventattn_weight_balance_range", [-0.10, 0.10]), "dorsattn_salventattn_weight_balance_range"),
         network_noise_mode_1=_network_mode(
             design_raw.get(
                 "network_noise_mode_1",
@@ -261,8 +261,8 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         reference_visual_noise_contrast=float(design_raw.get("reference_visual_noise_contrast", 0.0)),
         reference_network_noise_mode_1=float(design_raw.get("reference_network_noise_mode_1", 0.0)),
         reference_network_noise_mode_2=float(design_raw.get("reference_network_noise_mode_2", 0.0)),
-        reference_default_dorsattn_weight_contrast=float(design_raw.get("reference_default_dorsattn_weight_contrast", 0.0)),
-        reference_default_salventattn_weight_contrast=float(design_raw.get("reference_default_salventattn_weight_contrast", 0.0)),
+        reference_default_incident_weight_contrast=float(design_raw.get("reference_default_incident_weight_contrast", 0.0)),
+        reference_dorsattn_salventattn_weight_balance=float(design_raw.get("reference_dorsattn_salventattn_weight_balance", 0.0)),
     )
     posterior_raw = raw.get("posterior", {})
     posterior = PosteriorConfig(
@@ -375,8 +375,8 @@ def load_spectral_m5_config(path: str | Path) -> SpectralM5Config:
         (design.reference_visual_noise_contrast, design.visual_noise_contrast_range),
         (design.reference_network_noise_mode_1, design.network_noise_mode_1_range),
         (design.reference_network_noise_mode_2, design.network_noise_mode_2_range),
-        (design.reference_default_dorsattn_weight_contrast, design.default_dorsattn_weight_contrast_range),
-        (design.reference_default_salventattn_weight_contrast, design.default_salventattn_weight_contrast_range),
+        (design.reference_default_incident_weight_contrast, design.default_incident_weight_contrast_range),
+        (design.reference_dorsattn_salventattn_weight_balance, design.dorsattn_salventattn_weight_balance_range),
     )
     if any(not low <= value <= high for value, (low, high) in references):
         raise ValueError("Every spectral reference parameter must lie inside its range")

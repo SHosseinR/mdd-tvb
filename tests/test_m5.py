@@ -13,6 +13,7 @@ from mdd_tvb.features import extract_eeg_features
 from mdd_tvb.fit_config import load_m5_config
 from mdd_tvb.heterogeneity import network_labels
 from mdd_tvb.parameterization import NETWORK_ORDER, make_design
+from mdd_tvb.spectral_bank import connectome_for_spectral_candidate
 from mdd_tvb.spectral_config import load_spectral_m5_config
 from mdd_tvb.spectral_features import (
     CrossSpectralCollection,
@@ -68,6 +69,30 @@ def test_network_pair_gains_preserve_support_symmetry_and_total_strength() -> No
     assert np.array_equal(modified.weights > 0, connectome.weights > 0)
     assert np.isclose(modified.weights.sum(), connectome.weights.sum())
     assert not np.array_equal(modified.weights, connectome.weights)
+
+
+def test_spectral_structural_modes_are_broad_bounded_and_strength_preserving() -> None:
+    baseline = load_config(Path("configs/baseline.toml"))
+    connectome = load_connectome(baseline.paths, baseline.connectivity)
+    networks = network_labels(connectome.region_labels)
+    config = load_spectral_m5_config(Path("configs/m5_spectral_pilot.toml"))
+    reference = make_spectral_design(config.design)[0]
+    for candidate in (
+        replace(reference, default_incident_weight_contrast=0.10),
+        replace(reference, dorsattn_salventattn_weight_balance=0.10),
+    ):
+        modified = connectome_for_spectral_candidate(
+            connectome, networks, candidate
+        )
+        pair_gains = np.asarray(
+            list(modified.audit["network_pair_gains"].values())
+        )
+        assert pair_gains.min() >= 0.90 - 1e-12
+        assert pair_gains.max() <= 1.10 + 1e-12
+        assert np.count_nonzero(~np.isclose(pair_gains, 1.0)) >= 7
+        assert np.allclose(modified.weights, modified.weights.T)
+        assert np.array_equal(modified.weights > 0, connectome.weights > 0)
+        assert np.isclose(modified.weights.sum(), connectome.weights.sum())
 
 
 def test_m5_features_ignore_dc_and_absolute_amplitude() -> None:

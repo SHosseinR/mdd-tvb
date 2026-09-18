@@ -70,8 +70,8 @@ network_noise_mode_2_range = [-0.35, 0.35]
 # labels were not used to derive these fixed loadings.
 network_noise_mode_1 = { Cont = -0.0809303268, Default = -0.1702062801, DorsAttn = 1.0, Limbic = -0.0531851983, SalVentAttn = -0.6535874656, SomMot = 0.0144111626, Vis = -0.0424084614 }
 network_noise_mode_2 = { Cont = -0.1081241871, Default = -0.0460614625, DorsAttn = -0.3886020185, Limbic = -0.0415940948, SalVentAttn = -0.6295835545, SomMot = 0.0233192201, Vis = 1.0 }
-default_dorsattn_weight_contrast_range = [-0.10, 0.10]
-default_salventattn_weight_contrast_range = [-0.10, 0.10]
+default_incident_weight_contrast_range = [-0.10, 0.10]
+dorsattn_salventattn_weight_balance_range = [-0.10, 0.10]
 cross_coupling = 0.12
 reference_global_coupling = 7.0
 reference_speed_mm_per_ms = 4.0
@@ -88,8 +88,8 @@ reference_default_noise_contrast = 0.0
 reference_visual_noise_contrast = 0.0
 reference_network_noise_mode_1 = 0.0
 reference_network_noise_mode_2 = 0.0
-reference_default_dorsattn_weight_contrast = 0.0
-reference_default_salventattn_weight_contrast = 0.0
+reference_default_incident_weight_contrast = 0.0
+reference_dorsattn_salventattn_weight_balance = 0.0
 
 [posterior]
 # These are marginalized observation nuisances, never disease parameters.

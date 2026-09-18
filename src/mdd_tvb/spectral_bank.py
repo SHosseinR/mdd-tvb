@@ -78,17 +78,43 @@ def connectome_for_spectral_candidate(
     networks: np.ndarray,
     candidate: SpectralCandidate,
 ) -> Any:
-    """Apply two regularized, symmetric +/-10% structural block modes."""
+    """Apply two broad, bounded and total-strength-preserving weight modes.
 
+    The previous two modes touched only the Default--DorsAttn and
+    Default--SalVentAttn blocks.  Their effect was below stochastic replicate
+    noise in the better-sampled calibration bank.  Each mode retains the
+    requested +/-10% coefficient bound while acting on enough of the
+    connectome to be potentially identifiable from sensor spectra:
+
+    * all edges incident on Default mode network;
+    * a DorsAttn-versus-SalVentAttn incident-edge balance.
+    """
+
+    names = sorted(str(name) for name in np.unique(networks))
+    gains: dict[tuple[str, str], float] = {}
+    for first_index, first in enumerate(names):
+        for second in names[first_index:]:
+            default_loading = float("Default" in {first, second})
+            has_dorsal = "DorsAttn" in {first, second}
+            has_salience = "SalVentAttn" in {first, second}
+            balance_loading = (
+                1.0 if has_dorsal and not has_salience
+                else -1.0 if has_salience and not has_dorsal
+                else 0.0
+            )
+            gain = (
+                1.0
+                + candidate.default_incident_weight_contrast * default_loading
+            ) * (
+                1.0
+                + candidate.dorsattn_salventattn_weight_balance
+                * balance_loading
+            )
+            gains[(first, second)] = gain
     return with_network_pair_gains(
         connectome,
         networks,
-        {
-            ("Default", "DorsAttn"): 1.0
-            + candidate.default_dorsattn_weight_contrast,
-            ("Default", "SalVentAttn"): 1.0
-            + candidate.default_salventattn_weight_contrast,
-        },
+        gains,
         preserve_total_strength=True,
     )
 

@@ -588,8 +588,8 @@ def _plot_heldout_parameter_effects(
 
     rows: list[dict[str, Any]] = []
     structural = {
-        "default_dorsattn_weight_contrast",
-        "default_salventattn_weight_contrast",
+        "default_incident_weight_contrast",
+        "dorsattn_salventattn_weight_balance",
     }
     for name in PARAMETER_NAMES:
         column = f"{name}_posterior_mean"
@@ -739,8 +739,8 @@ def fit_spectral_subjects(
     structural_columns = [
         PARAMETER_NAMES.index(name)
         for name in (
-            "default_dorsattn_weight_contrast",
-            "default_salventattn_weight_contrast",
+            "default_incident_weight_contrast",
+            "dorsattn_salventattn_weight_balance",
         )
     ]
     prior_cost += config.posterior.spatial_prior_strength * np.mean(
@@ -1016,8 +1016,8 @@ def fit_spectral_subjects(
     structural_recovery = [
         float(recovery_correlations.get(name, 0.0))
         for name in (
-            "default_dorsattn_weight_contrast",
-            "default_salventattn_weight_contrast",
+            "default_incident_weight_contrast",
+            "dorsattn_salventattn_weight_balance",
         )
     ]
     holdout_summary = split_summary["holdout"]

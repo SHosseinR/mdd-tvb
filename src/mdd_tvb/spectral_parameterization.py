@@ -28,8 +28,8 @@ PARAMETER_NAMES: tuple[str, ...] = (
     "visual_noise_contrast",
     "network_noise_mode_1",
     "network_noise_mode_2",
-    "default_dorsattn_weight_contrast",
-    "default_salventattn_weight_contrast",
+    "default_incident_weight_contrast",
+    "dorsattn_salventattn_weight_balance",
 )
 
 
@@ -51,8 +51,8 @@ class SpectralCandidate:
     visual_noise_contrast: float
     network_noise_mode_1: float
     network_noise_mode_2: float
-    default_dorsattn_weight_contrast: float
-    default_salventattn_weight_contrast: float
+    default_incident_weight_contrast: float
+    dorsattn_salventattn_weight_balance: float
 
     def numeric_vector(self) -> np.ndarray:
         return np.asarray(
@@ -89,8 +89,8 @@ def spectral_parameter_ranges(
         settings.visual_noise_contrast_range,
         settings.network_noise_mode_1_range,
         settings.network_noise_mode_2_range,
-        settings.default_dorsattn_weight_contrast_range,
-        settings.default_salventattn_weight_contrast_range,
+        settings.default_incident_weight_contrast_range,
+        settings.dorsattn_salventattn_weight_balance_range,
     )
 
 
@@ -159,8 +159,8 @@ def make_spectral_design(settings: SpectralDesignConfig) -> list[SpectralCandida
             settings.reference_visual_noise_contrast,
             settings.reference_network_noise_mode_1,
             settings.reference_network_noise_mode_2,
-            settings.reference_default_dorsattn_weight_contrast,
-            settings.reference_default_salventattn_weight_contrast,
+            settings.reference_default_incident_weight_contrast,
+            settings.reference_dorsattn_salventattn_weight_balance,
         ],
         dtype=float,
     )

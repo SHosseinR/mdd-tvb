@@ -38,23 +38,17 @@ def main() -> None:
     parser.add_argument(
         "--bank",
         type=Path,
-        default=Path(
-            "outputs/m5_spectral_m51_calibration/bank/"
-            "spectral_simulation_bank.npz"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--fit-dir",
         type=Path,
-        default=Path("outputs/m5_spectral_m51_calibration/evaluation/fit"),
+        default=None,
     )
     parser.add_argument(
         "--decision",
         type=Path,
-        default=Path(
-            "outputs/m5_spectral_m51_calibration/evaluation/"
-            "CALIBRATION_DECISION.json"
-        ),
+        default=None,
     )
     parser.add_argument(
         "--output",
@@ -68,7 +62,15 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    decision = json.loads(args.decision.read_text(encoding="utf-8"))
+    config = load_spectral_m5_config(args.config)
+    bank_path = args.bank or (
+        config.paths.output_dir / "bank" / "spectral_simulation_bank.npz"
+    )
+    fit_dir = args.fit_dir or (config.paths.output_dir / "evaluation" / "fit")
+    decision_path = args.decision or (
+        config.paths.output_dir / "evaluation" / "CALIBRATION_DECISION.json"
+    )
+    decision = json.loads(decision_path.read_text(encoding="utf-8"))
     if decision.get("status") != "promote_to_production" and not args.force:
         raise RuntimeError(
             "Calibration did not pass promotion gates; adaptive production "
@@ -77,9 +79,8 @@ def main() -> None:
     if not 2 <= args.broad_samples < args.samples:
         raise ValueError("broad-samples must be between 2 and total samples")
 
-    config = load_spectral_m5_config(args.config)
-    bank = load_spectral_simulation_bank(args.bank)
-    top = pd.read_csv(args.fit_dir / "subject_top_posterior_states.csv")
+    bank = load_spectral_simulation_bank(bank_path)
+    top = pd.read_csv(fit_dir / "subject_top_posterior_states.csv")
     per_subject_candidate = (
         top.groupby(["subject_id", "candidate_index"], as_index=False)[
             "posterior_weight"
