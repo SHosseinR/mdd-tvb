@@ -1,0 +1,13 @@
+{
+  "analytic_and_bem_gain_flat_correlation": 0.3858367626599292,
+  "parcel_topography_cosine": {
+    "median": 0.4464774807608023,
+    "p05": -0.40927545329106796,
+    "p95": 0.8974009254551643,
+    "negative_fraction": 0.23
+  },
+  "sensor_covariance_upper_triangle_correlation": 0.8539759309202376,
+  "analytic_rank": 25,
+  "template_bem_rank": 25,
+  "interpretation": "Geometry audit only. Empirical superiority must be evaluated with nested M5.2 development folds, never the consumed M5.1 holdout."
+}

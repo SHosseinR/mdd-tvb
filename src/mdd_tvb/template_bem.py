@@ -38,15 +38,24 @@ def tdbrain_table_positions(
 def tdbrain_montage(
     coordinate_file: Path, channel_names: tuple[str, ...]
 ) -> mne.channels.DigMontage:
+    """Map published TDBRAIN points in Colin27/fsaverage MRI coordinates.
+
+    The table positions closely match MNE's ``colin27_1005`` MRI-coordinate
+    sensor positions. Labeling them as *head* coordinates skips the fiducial
+    transform and displaces some sensors by centimetres on fsaverage.
+    """
+
     positions = tdbrain_table_positions(coordinate_file, channel_names)
     standard = mne.channels.make_standard_montage("colin27_1005")
     standard_positions = standard.get_positions()
+    if standard_positions["coord_frame"] != "mri":
+        raise RuntimeError("Colin27 montage is not in the expected MRI frame")
     return mne.channels.make_dig_montage(
         ch_pos=dict(zip(channel_names, positions, strict=True)),
         nasion=standard_positions["nasion"],
         lpa=standard_positions["lpa"],
         rpa=standard_positions["rpa"],
-        coord_frame="head",
+        coord_frame="mri",
     )
 
 
@@ -90,6 +99,10 @@ def aggregate_fixed_forward_to_labels(
 
     offsets = np.cumsum([0] + [int(space["nuse"]) for space in source_spaces])
     area = [_vertex_areas(space) for space in source_spaces]
+    reference = np.eye(fixed_gain.shape[0]) - np.ones(
+        (fixed_gain.shape[0], fixed_gain.shape[0])
+    ) / fixed_gain.shape[0]
+    referenced_vertex_gain = reference @ fixed_gain
     regional = np.empty((fixed_gain.shape[0], len(expected_names)), dtype=float)
     audit: list[dict[str, Any]] = []
     for region_index, name in enumerate(expected_names):
@@ -105,6 +118,9 @@ def aggregate_fixed_forward_to_labels(
         weights /= weights.sum()
         columns = offsets[hemi_index] + active_indices
         regional[:, region_index] = fixed_gain[:, columns] @ weights
+        vertex_fields = referenced_vertex_gain[:, columns]
+        mean_vertex_norm = float(np.linalg.norm(vertex_fields, axis=0) @ weights)
+        regional_norm = float(np.linalg.norm(vertex_fields @ weights))
         audit.append(
             {
                 "region_index": region_index,
@@ -112,6 +128,10 @@ def aggregate_fixed_forward_to_labels(
                 "hemisphere": label.hemi,
                 "source_vertices": int(len(vertices)),
                 "represented_area_m2": float(area[hemi_index][vertices].sum()),
+                "mean_vertex_field_norm": mean_vertex_norm,
+                "regional_field_norm": regional_norm,
+                "signed_field_retention": regional_norm
+                / max(mean_vertex_norm, np.finfo(float).tiny),
             }
         )
     return regional, audit
@@ -158,6 +178,21 @@ def build_template_bem_gain(
     info.set_montage(
         tdbrain_montage(coordinate_file, channel_names), on_missing="raise"
     )
+    electrode_scalp_distances = mne.dig_mri_distances(
+        info,
+        str(trans_path),
+        "fsaverage",
+        subjects_dir=str(subjects_dir),
+        dig_kinds="eeg",
+        verbose=False,
+    )
+    if len(electrode_scalp_distances) != len(channel_names):
+        raise RuntimeError("Template scalp audit omitted EEG electrodes")
+    if float(np.max(electrode_scalp_distances)) > 0.010:
+        raise ValueError(
+            "TDBRAIN electrodes are >10 mm from the fsaverage scalp; "
+            "check the MRI-to-head coordinate transform"
+        )
     forward = mne.make_forward_solution(
         info,
         trans=str(trans_path),
@@ -211,6 +246,11 @@ def build_template_bem_gain(
     region_table = pd.DataFrame(region_audit)
     metadata: dict[str, Any] = {
         "method": "MNE three-layer fsaverage BEM with fixed cortical-normal sources",
+        "electrode_coordinate_frame": "Colin27/fsaverage MRI, transformed to head by MNE fiducials",
+        "electrode_to_scalp_distance_mm": {
+            "median": float(np.median(electrode_scalp_distances) * 1000.0),
+            "maximum": float(np.max(electrode_scalp_distances) * 1000.0),
+        },
         "mne_version": mne.__version__,
         "subject": "fsaverage",
         "source_space": source_path.name,
@@ -230,6 +270,11 @@ def build_template_bem_gain(
         "minimum_vertices_per_parcel": int(region_table.source_vertices.min()),
         "median_vertices_per_parcel": float(region_table.source_vertices.median()),
         "maximum_vertices_per_parcel": int(region_table.source_vertices.max()),
+        "signed_field_retention": {
+            "median": float(region_table.signed_field_retention.median()),
+            "p05": float(region_table.signed_field_retention.quantile(0.05)),
+            "minimum": float(region_table.signed_field_retention.min()),
+        },
         "tdbrain_to_colin27_angular_difference_degrees": {
             "median": float(np.median(angular_difference)),
             "maximum": float(np.max(angular_difference)),

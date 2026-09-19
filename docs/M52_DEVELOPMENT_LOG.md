@@ -8,6 +8,13 @@ This log records results in the order they were obtained. The acceptance rules
 are fixed in `M52_VALIDATION_PROTOCOL.md`. The 65 previously evaluated M5.1
 holdout subjects are not used for M5.2 architecture or hyperparameter choices.
 
+> **Correction, 2026-09-19:** The version-24 template-BEM forward model below
+> contained a coordinate-frame implementation error: TDBRAIN/Colin27 MRI
+> electrode coordinates were mislabeled as head coordinates. The BEM fit and
+> stopping decision in Sections 5–6 are **invalid as tests of the intended
+> forward model** and are retained only as a failure record. The fixed gates
+> have not changed. See Section 7 for the geometry audit and corrected rerun.
+
 ## 1. Reproducibility freeze
 
 `scripts/freeze_m51_release.py` validates and hashes the final M5.1 release.
@@ -121,7 +128,7 @@ gain hashes. The full seven-artifact checksum inventory is in
 `M52_BEM_BANK_MANIFEST.json`. The 65 consumed M5.1 holdout subjects were not
 used.
 
-## 5. Five-fold out-of-fold BEM result
+## 5. Five-fold out-of-fold BEM result — invalid geometry
 
 The BEM bank was passed through the same five development-only outer folds and
 the same chronological first-half fitting / second-half unseen evaluation as
@@ -165,33 +172,53 @@ Evidence artifacts, all from the 262 development subjects:
 - `outputs/m52_compare_template_bem/model_comparison.png` —
   `a3430ca7708b3df82c1a901fc01428b9a18980ae692b83465dc64ce15bf9827c`.
 
-## 6. Scientific interpretation and stopping decision
+## 6. Historical stopping decision — withdrawn
 
-The stronger anatomical forward solve did **not** improve the prespecified
-spatial endpoints in this controlled test. The paired connectivity CI includes
-zero and its point estimate is slightly worse; alpha topography is much worse
-with a CI entirely above zero. The predeclared Section 13 stopping rule in
-`M52_VALIDATION_PROTOCOL.md` therefore applies: stop this model-expansion
-sequence and report, rather than fitting a correlated background or adding
-neural-dynamics degrees of freedom to rescue this failed forward-model branch.
-Do not proceed to TMS target/protocol optimization or use the already-consumed
-65-subject M5.1 holdout to revise this decision.
+Before the registration audit, the poor spatial endpoints appeared to trigger
+the predeclared stopping rule. That inference was withdrawn: although the
+simulation bank was finite, correctly ordered, and reproducible, the EEG
+electrode locations were in the wrong frame for the template BEM. This is an
+implementation failure, not evidence that a correctly registered BEM or its
+parcel source representation fails. The 65-subject M5.1 holdout remains
+off-limits for repair decisions. No TMS target/protocol optimization is
+justified while the corrected forward model is unevaluated.
 
-This result rejects the **specific** template-BEM regional projection used
-here, not BEM physics in general. Its parcel operator assumes one synchronous,
-uniform cortical-normal source amplitude per Schaefer parcel and averages
-signed vertex lead fields; cortical folding can produce substantial
-cancellation. The two spatial noise modes were also originally derived in the
-analytic-gain basis and deliberately kept fixed to isolate the gain change.
-Those are plausible representational limitations, not demonstrated bugs. The
-bank hashes, channel/parcel ordering, average reference, finite arrays, GPU
-provenance, and zero-failure checks passed. A future BEM study would need a
-prospectively specified parcel source distribution or subparcel state model,
-with new development data for selection, rather than post-hoc tuning on these
-five folds.
+## 7. Coordinate-frame defect and corrected forward-model audit
 
-The next scientific decision is whether to acquire independent spatial data
-(individual electrode digitization/MRI, source-space constraints, or a new EEG
-cohort) or to formulate a narrowly prespecified dynamics hypothesis that can
-be tested in a new locked design. Additional optimization of this frozen
-candidate bank is not a credible path to TMS target selection.
+The published TDBRAIN electrode coordinates are close to MNE's `colin27_1005`
+sensor locations in the *MRI* coordinate frame (for example, Fz differs by
+about 1.6 mm). MNE reports that standard montage's coordinate frame as `mri`.
+The original `tdbrain_montage()` labeled the same coordinates as `head`, so MNE
+did not apply the MRI-to-head fiducial transform before the fsaverage forward
+solve. The audit found a median 15.8 mm and maximum 56.2 mm electrode-to-scalp
+distance. After labeling the montage as MRI coordinates, those distances were
+3.13 mm median and 6.70 mm maximum. The builder now rejects any gain whose
+electrode-to-scalp maximum exceeds 10 mm; a regression test checks the frame.
+
+The corrected gain is saved separately in `data/forward/template_bem_corrected`
+so the invalid version-24 bank remains reproducible. Its parcel-to-parcel
+sensor-topography cosine with the analytic gain rose from 0.336 to 0.446, and
+its sensor-Gram correlation rose from 0.777 to 0.854. Signed cortical-field
+retention after within-parcel aggregation has a median of 0.631 and minimum
+0.287, so cancellation remains a model limitation even after registration.
+
+A deliberately cheap exploratory test asked whether seven nonnegative network
+power profiles could explain each development subject's first-half alpha
+topography and predict the second half. It did not fit neural dynamics or read
+any of the 65 consumed M5.1 holdout subjects:
+
+| Forward gain | Median unseen alpha-profile RMSE / pooled null | Subjects below null |
+| --- | ---: | ---: |
+| Analytic | 0.894 | 63.7% |
+| Old misregistered BEM | 1.600 | 23.3% |
+| Corrected BEM | 0.988 | 51.1% |
+
+The corrected gain greatly improves over the defective gain but does not beat
+the analytic baseline on this descriptive power-profile oracle. Its inherited
+spatial-mode maps also align more closely with the analytic maps (cosines 0.707
+and 0.825, versus 0.249 and 0.145 for the defective gain). This evidence
+justifies one controlled corrected full-bank test to establish the actual
+spectral/connectivity result; it is **not** evidence that the corrected BEM
+passes M5.2. The same candidate design, frozen scientific gates, five-fold
+development subjects, and exclusion of the old holdout remain in force. The
+corrected run is a defect repair, not a post-hoc expansion of parameter space.

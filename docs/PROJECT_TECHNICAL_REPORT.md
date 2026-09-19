@@ -7,11 +7,12 @@
 **Repository:** `mdd-tvb`
 **Current implementation status:** M1–M4 complete; M5.1 production complete but not scientifically accepted; stimulation optimization blocked
 
-**Update, 2026-09-19:** The original report below is a historical M5.1
-snapshot. M5.2's controlled template-BEM forward-model test has now completed
-and failed its preregistered spatial and eligibility gates. See Section 13 and
-`M52_DEVELOPMENT_LOG.md` for the current decision; the original M5.1 figures
-and recommendations below are preserved as they were written.
+**Correction, 2026-09-19:** The original report below is a historical M5.1
+snapshot. The M5.2 template-BEM test described in Section 13 used electrodes
+in the wrong coordinate frame and is **not a valid forward-model comparison**.
+Its numerical record is retained for provenance, but its stop decision is
+withdrawn. See `M52_DEVELOPMENT_LOG.md`, Section 7, for the registration audit
+and controlled corrected rerun. The original M5.1 figures remain valid.
 
 ---
 
@@ -892,7 +893,17 @@ properties that will drive target selection.
 
 ---
 
-## 13. M5.2 update — template BEM is not selected (2026-09-19)
+## 13. M5.2 update — invalid BEM geometry and correction (2026-09-19)
+
+**Status correction:** The unfavorable version-24 BEM result described below
+cannot be used to reject the intended template forward model. The TDBRAIN
+electrode positions were expressed in Colin27/fsaverage MRI coordinates but
+were incorrectly tagged as head coordinates. This displaced sensors from the
+template scalp by as much as 56 mm. Fixing the coordinate frame reduced the
+maximum distance to 6.7 mm. The old production bank is preserved for audit;
+a separately versioned corrected gain is being tested with unchanged candidate
+design, gates, and development-only subject splits. No TMS optimization is
+authorized by either result.
 
 M5.2 froze the M5.1 release, excluded all 65 previously used holdout subjects,
 and tested a distributed, average-referenced fsaverage three-layer EEG BEM
@@ -909,22 +920,14 @@ improvement in lagged connectivity (1.046 versus 1.032; paired median change
 +0.012, 95% bootstrap CI [−0.0004, +0.0235]). Only 45.8% of BEM-fitted
 subjects beat the pooled null. Its lagged-connectivity Healthy–MDD effect
 correlation was 0.073 and its effect-norm retention 0.112, below the fixed
-eligibility gates. The BEM branch is `not_eligible`.
+eligibility gates. These numbers describe only the defective version-24 bank;
+they are not evidence against a correctly registered BEM.
 
-This finding is limited to the tested **regional source representation**, not
-an indictment of BEM as an electromagnetic solver. A uniform cortical-normal
-state in each large parcel, followed by signed lead-field averaging, can cancel
-oppositely oriented cortical sources. The two spatial noise modes had also
-been derived under the analytic gain and deliberately held fixed for this
-controlled comparison. Neither explanation has been established by an
-independent experiment, so neither justifies post-hoc retuning on the tested
-folds.
-
-The predeclared M5.2 stopping rule now applies: no correlated-background or
-neural-dynamics expansion is launched to rescue this failed forward-model
-branch, and no TMS target optimization is justified. The scientifically useful
-next investment is an independently specified source-distribution hypothesis
-and new locked evaluation data, ideally with individual electrode/anatomical
-information. The original 65-subject M5.1 holdout must not be reused for
-model selection. The complete numerical comparison and artifact hashes are in
-`M52_DEVELOPMENT_LOG.md`.
+The previous stop decision was withdrawn because the tested implementation was
+geometrically invalid. Correcting an identified coordinate-frame defect while
+holding the scientific design fixed is not post-hoc expansion of the model.
+The corrected bank still needs unseen temporal and outer-fold evaluation;
+neither its success nor failure should be inferred from a simple geometry
+diagnostic. The original 65-subject M5.1 holdout must not be reused for model
+selection. The complete numerical record, defect analysis, and artifact hashes
+are in `M52_DEVELOPMENT_LOG.md`.

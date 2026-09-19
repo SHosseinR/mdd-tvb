@@ -2,6 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
+import mne
 
 from mdd_tvb.config import load_config
 from mdd_tvb.connectome import (
@@ -32,6 +33,7 @@ from mdd_tvb.spectral_parameterization import (
     normalized_spectral_parameters,
 )
 from mdd_tvb.spectral_fit import _posterior_csd
+from mdd_tvb.template_bem import tdbrain_montage
 
 
 def test_m5_config_and_bounded_design() -> None:
@@ -270,16 +272,39 @@ def test_compact_posterior_csd_matches_dense_state_average() -> None:
 
 
 def test_template_bem_gain_matches_model_channel_and_region_order() -> None:
-    config = load_spectral_m5_config(Path("configs/m52_template_bem_pilot.toml"))
-    baseline = load_config(config.paths.baseline_config)
-    connectome = load_connectome(baseline.paths, baseline.connectivity)
-    gain, metadata = spectral_observation_gain(config, baseline, connectome)
-    assert gain.shape == (26, 200)
-    assert np.isfinite(gain).all()
-    assert np.allclose(gain.mean(axis=0), 0.0, atol=1e-12)
-    assert np.isclose(np.sqrt(np.mean(np.square(gain))), 1.0)
-    assert metadata["observation_gain"] == "configured_regional_gain"
-    assert len(metadata["observation_gain_sha256"]) == 64
+    for path in (
+        Path("configs/m52_template_bem_pilot.toml"),
+        Path("configs/m52_template_bem_corrected.toml"),
+    ):
+        config = load_spectral_m5_config(path)
+        baseline = load_config(config.paths.baseline_config)
+        connectome = load_connectome(baseline.paths, baseline.connectivity)
+        gain, metadata = spectral_observation_gain(config, baseline, connectome)
+        assert gain.shape == (26, 200)
+        assert np.isfinite(gain).all()
+        assert np.allclose(gain.mean(axis=0), 0.0, atol=1e-12)
+        assert np.isclose(np.sqrt(np.mean(np.square(gain))), 1.0)
+        assert metadata["observation_gain"] == "configured_regional_gain"
+        assert len(metadata["observation_gain_sha256"]) == 64
+
+
+def test_tdbrain_montage_uses_colin27_mri_frame() -> None:
+    baseline = load_config(Path("configs/baseline.toml"))
+    montage = tdbrain_montage(
+        baseline.monitor.coordinate_file,
+        baseline.monitor.channels,
+    )
+    positions = montage.get_positions()
+    standard = mne.channels.make_standard_montage("colin27_1005").get_positions()
+    assert positions["coord_frame"] == "mri"
+    differences = np.asarray(
+        [
+            np.linalg.norm(positions["ch_pos"][name] - standard["ch_pos"][name])
+            for name in baseline.monitor.channels
+        ]
+    )
+    assert len(differences) == 26
+    assert float(differences.max()) < 0.010
 
 
 def test_cross_spectral_subset_preserves_sensor_axes_and_rejects_bad_indices() -> None:
