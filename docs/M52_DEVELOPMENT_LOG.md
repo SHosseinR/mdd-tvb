@@ -222,3 +222,12 @@ spectral/connectivity result; it is **not** evidence that the corrected BEM
 passes M5.2. The same candidate design, frozen scientific gates, five-fold
 development subjects, and exclusion of the old holdout remain in force. The
 corrected run is a defect repair, not a post-hoc expansion of parameter space.
+The exploratory audit outputs are
+`outputs/m52_forward_mapping_audit/forward_mapping_audit.json` (SHA-256
+`8f8782cf71affe30bcebd2fb24d6d37c45945c504ed2ea6f71a17370e6ee3972`)
+and `forward_mapping_audit.png` (SHA-256
+`a61b720aa253539415599846068a31603e43feb7e6b035fc56d80bc0fae80170`).
+MNE documents that Colin27 montage locations are already in fsaverage MRI
+coordinates and recommends checking electrode-to-scalp distances for
+coregistration: [standard montage](https://mne.tools/stable/generated/mne.channels.make_standard_montage.html),
+[distance check](https://mne.tools/stable/generated/mne.dig_mri_distances.html).

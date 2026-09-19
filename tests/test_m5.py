@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import numpy as np
@@ -305,6 +306,14 @@ def test_tdbrain_montage_uses_colin27_mri_frame() -> None:
     )
     assert len(differences) == 26
     assert float(differences.max()) < 0.010
+
+
+def test_corrected_bem_geometry_audit_passes_scalp_guard() -> None:
+    path = Path("data/forward/template_bem_corrected/template_bem_metadata.json")
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    assert "MRI" in metadata["electrode_coordinate_frame"]
+    assert metadata["electrode_to_scalp_distance_mm"]["maximum"] < 10.0
+    assert metadata["signed_field_retention"]["minimum"] > 0.0
 
 
 def test_cross_spectral_subset_preserves_sensor_axes_and_rejects_bad_indices() -> None:

@@ -13,12 +13,24 @@ from typing import Any, BinaryIO
 import numpy as np
 
 
-EXPECTED_COMMIT = "9a1b6ad"
+RUNS = {
+    "legacy": {
+        "commit": "9a1b6ad",
+        "gain_sha256": "299efec33c8a38879ef480e5aa4757ff9b62e48636067d23dd61f6ba4c9ebf8b",
+        "directory": "m52_template_bem_production",
+        "summary": "m52_template_bem_summary.json",
+        "release": "m5.2-template-bem-production-bank-invalid-registration",
+    },
+    "corrected": {
+        "commit": "a8f4bfc",
+        "gain_sha256": "e0e0c4bbf453ed0d81ce27867a92ee974f9da477b210fa3375d4d2fca92ac3ac",
+        "directory": "m52_template_bem_corrected_production",
+        "summary": "m52_template_bem_corrected_summary.json",
+        "release": "m5.2-template-bem-corrected-production-bank",
+    },
+}
 EXPECTED_CANDIDATE_SHA256 = (
     "1f2b5a79abb98ddf7c496aea9ee735fb354ed9d0ae2d47cf13faceea0b40b4da"
-)
-EXPECTED_GAIN_SHA256 = (
-    "299efec33c8a38879ef480e5aa4757ff9b62e48636067d23dd61f6ba4c9ebf8b"
 )
 STRUCTURAL_COLUMNS = (
     "default_incident_weight_contrast",
@@ -83,23 +95,27 @@ def _stream_array_finite(
 def validate_bank(
     source: Path,
     *,
-    expected_commit: str = EXPECTED_COMMIT,
+    variant: str = "legacy",
+    expected_commit: str | None = None,
     expected_candidates: int = 2048,
     expected_replicates: int = 3,
     expected_candidate_sha256: str = EXPECTED_CANDIDATE_SHA256,
-    expected_gain_sha256: str = EXPECTED_GAIN_SHA256,
+    expected_gain_sha256: str | None = None,
 ) -> dict[str, Any]:
+    run = RUNS[variant]
+    expected_commit = expected_commit or run["commit"]
+    expected_gain_sha256 = expected_gain_sha256 or run["gain_sha256"]
     source = source.resolve()
-    nested = source / "m52_template_bem_production" / "bank"
+    nested = source / run["directory"] / "bank"
     if nested.is_dir():
         bank_dir = nested
     elif (source / "bank").is_dir():
         bank_dir = source / "bank"
     else:
         bank_dir = source
-    summary_path = source / "m52_template_bem_summary.json"
+    summary_path = source / run["summary"]
     if not summary_path.is_file():
-        summary_path = bank_dir.parent / "m52_template_bem_summary.json"
+        summary_path = bank_dir.parent / run["summary"]
 
     required = {
         "summary": summary_path,
@@ -221,7 +237,7 @@ def validate_bank(
         artifact_root = source.as_posix()
     return {
         "schema_version": 1,
-        "release": "m5.2-template-bem-production-bank",
+        "release": run["release"],
         "artifact_root": artifact_root,
         "artifact_count": len(artifact_paths),
         "artifact_bytes": sum(path.stat().st_size for path in artifact_paths),
@@ -251,9 +267,10 @@ def validate_bank(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
+    parser.add_argument("--variant", choices=tuple(RUNS), default="legacy")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    manifest = validate_bank(args.source)
+    manifest = validate_bank(args.source, variant=args.variant)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

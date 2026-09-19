@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "m5.2-template-bem-production-bank",
+  "release": "m5.2-template-bem-production-bank-invalid-registration",
   "artifact_root": "outputs/m52_template_bem_production",
   "artifact_count": 7,
   "artifact_bytes": 1475270897,

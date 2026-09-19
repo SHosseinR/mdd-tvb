@@ -109,6 +109,21 @@ def test_validate_small_complete_bank(tmp_path: Path) -> None:
     assert all(manifest["validation"]["checks"].values())
     assert manifest["validation"]["csd_shape"] == [2, 2, 39, 26, 26]
 
+    corrected_summary = source / "m52_template_bem_corrected_summary.json"
+    corrected_summary.write_bytes(
+        (source / "m52_template_bem_summary.json").read_bytes()
+    )
+    corrected_manifest = validate_bank(
+        source,
+        variant="corrected",
+        expected_commit="abc",
+        expected_candidates=2,
+        expected_replicates=2,
+        expected_candidate_sha256="cand",
+        expected_gain_sha256="gain",
+    )
+    assert all(corrected_manifest["validation"]["checks"].values())
+
     candidate_rows[0]["default_incident_weight_contrast"] = 0.1
     _write_csv(
         bank_dir / "candidate_parameters.csv",
