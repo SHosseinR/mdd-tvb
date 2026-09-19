@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "release": "m5.2-template-bem-corrected-production-bank",
+  "artifact_root": "outputs/m52_template_bem_corrected_production",
+  "artifact_count": 7,
+  "artifact_bytes": 1475608419,
+  "validation": {
+    "checks": {
+      "source_commit": true,
+      "candidate_hash": true,
+      "gain_hash_summary": true,
+      "gain_hash_backend": true,
+      "configured_gain_used": true,
+      "candidate_count": true,
+      "replicate_count": true,
+      "zero_failures": true,
+      "parameters_shape": true,
+      "csd_shape": true,
+      "summary_parameters_shape": true,
+      "summary_csd_shape": true,
+      "arrays_finite": true,
+      "summary_finite": true,
+      "structural_fitting_disabled": true,
+      "structural_columns_zero": true,
+      "summary_structural_columns_zero": true,
+      "candidate_table_matches_bank": true,
+      "candidate_indices_ordered": true,
+      "replicate_design_complete": true,
+      "frequency_axis": true,
+      "channel_axis": true,
+      "parameter_axis": true,
+      "gpu_backend": true,
+      "backend_simulation_count": true,
+      "bank_file_size_summary": true
+    },
+    "candidate_rows": 2048,
+    "replicate_rows": 6144,
+    "failure_rows": 0,
+    "parameters_shape": [
+      2048,
+      17
+    ],
+    "parameters_dtype": "float64",
+    "csd_shape": [
+      2048,
+      3,
+      39,
+      26,
+      26
+    ],
+    "csd_dtype": "complex128",
+    "structural_unique_values": {
+      "default_incident_weight_contrast": [
+        0.0
+      ],
+      "dorsattn_salventattn_weight_balance": [
+        0.0
+      ]
+    },
+    "bank_source_commit": "a8f4bfc"
+  },
+  "artifacts": [
+    {
+      "path": "m52_template_bem_corrected_production/bank/backend_metadata.json",
+      "bytes": 762,
+      "sha256": "c4f0993a51a7597d7646dac77c1570a941cf67d1d50d2b5037e94409e2c609c4"
+    },
+    {
+      "path": "m52_template_bem_corrected_production/bank/candidate_parameters.csv",
+      "bytes": 588578,
+      "sha256": "3f21beacf490b2430b13b0e7d246829348787ad2967a23cc33b3eb15b1e221b5"
+    },
+    {
+      "path": "m52_template_bem_corrected_production/bank/replicates.csv",
+      "bytes": 58157,
+      "sha256": "92a56213e1e498e7880c28e949c0d1dbb8d77383ed7e773bc0ba0ee539df15e9"
+    },
+    {
+      "path": "m52_template_bem_corrected_production/bank/simulation_failures.csv",
+      "bytes": 32,
+      "sha256": "b673cab3b2ac48bd1a704c28fca068ec64e143ab6821f723d409c25fb4f143b3"
+    },
+    {
+      "path": "m52_template_bem_corrected_production/bank/spectral_simulation_bank.npz",
+      "bytes": 1474944888,
+      "sha256": "89df2df3b095d38ad6c08f1ddfb937c3ccbe48adf40dc4bd48fed9ad9dbcbee6"
+    },
+    {
+      "path": "m52_template_bem_corrected_summary.json",
+      "bytes": 1114,
+      "sha256": "59b7c08358da338f820c7ecfef2f721797b190490c4f52865e98dad7943cd54f"
+    },
+    {
+      "path": "tvbgpu.log",
+      "bytes": 14888,
+      "sha256": "4a36fe9b877730030a2a2f826eab9ec2dee4c190f67259df6af3a3e979df0522"
+    }
+  ]
+}

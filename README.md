@@ -15,6 +15,16 @@ hierarchical EEG-fitting stage:
 M5 adds diagnosis-level and individual EEG fitting. Plasticity, FEM fields,
 stimulation, and protocol optimization remain later milestones.
 
+**Current M5.2 status (2026-09-19):** A correctly registered, distributed
+template EEG BEM was evaluated against the analytic gain on 262 development
+subjects in five outer folds. The BEM did not pass the fixed unseen EEG gates:
+alpha-topography fit was worse, and its small lagged-connectivity point
+improvement was uncertain. The analytic gain remains selected for the next
+prespecified correlated-background test; no TMS optimization is justified yet.
+See `docs/M52_DEVELOPMENT_LOG.md` and `docs/PROJECT_TECHNICAL_REPORT.md` for
+the full numerical record. The earlier misregistered BEM run is preserved but
+explicitly invalid for that comparison.
+
 ## Scientific definition
 
 The supplied streamline-count matrix is transformed with `log1p`, then globally

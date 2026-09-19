@@ -231,3 +231,95 @@ MNE documents that Colin27 montage locations are already in fsaverage MRI
 coordinates and recommends checking electrode-to-scalp distances for
 coregistration: [standard montage](https://mne.tools/stable/generated/mne.channels.make_standard_montage.html),
 [distance check](https://mne.tools/stable/generated/mne.dig_mri_distances.html).
+
+## 8. Corrected-frame production bank and five-fold evaluation
+
+Kaggle notebook `shahmadi/tvbgpu` version 25 completed the corrected design
+from pinned source commit `a8f4bfc`. The later audit/validator commit `abf342d`
+was deliberately not part of the notebook source. Its 1,474,944,888-byte
+bank was downloaded with byte-range resume after the Kaggle CLI lost an
+in-memory partial response. The full seven-artifact inventory and hashes are
+in `M52_BEM_CORRECTED_BANK_MANIFEST.json`. Every validation check passed:
+2,048 candidate rows, three replicates each, finite
+`2048 × 3 × 39 × 26 × 26` complex CSD, zero failed simulations, both structural
+columns identically zero, GPU backend, candidate SHA-256
+`1f2b5a79abb98ddf7c496aea9ee735fb354ed9d0ae2d47cf13faceea0b40b4da`,
+and corrected gain SHA-256
+`e0e0c4bbf453ed0d81ce27867a92ee974f9da477b210fa3375d4d2fca92ac3ac`.
+The two-GPU simulation took 11,803 seconds. This validates implementation
+integrity, not empirical fit.
+
+The original empirical EEG collections were reused. Five development-only
+outer folds completed with `configs/m52_template_bem_corrected.toml`, each
+fitting subjects on the first temporal half and evaluating their unseen second
+half. The 262 out-of-fold subject IDs are unique and exactly match
+`configs/m52_nested_splits.csv` (fold sizes 54/52/52/52/52). None of the 65
+consumed M5.1 holdout subjects contributed to fitting or comparison. The
+1,000-resample bootstrap paired identical development subjects. Lower ratios
+are better; the null threshold is one.
+
+| Unseen metric | Analytic M5.1 | Corrected BEM | Paired BEM − M5.1 median [95% CI] |
+| --- | ---: | ---: | ---: |
+| Total cost / null | 0.745 | 0.800 | +0.019 [+0.011, +0.031] |
+| Autospectrum cost / null | 0.471 | 0.527 | +0.017 [+0.004, +0.032] |
+| Selected lagged-connectivity cost / null | 1.032 | 1.008 | −0.012 [−0.027, +0.009] |
+| Alpha-topography cost / null | 0.912 | 1.216 | +0.234 [+0.156, +0.294] |
+
+The corrected gain is far better than the *invalid* v24 gain on alpha
+topography (1.216 versus 3.538), confirming that the coordinate-frame defect
+was material. Relative to the analytic comparator, however, alpha topography
+is worse in all five outer folds and its paired CI excludes zero. The small
+point-estimate improvement in connectivity appears in only two of five folds;
+its paired CI includes zero and the absolute ratio remains above one. Total
+cost is also reliably worse than the analytic comparator, though still below
+the pooled null. The corrected model beats the null for 74.8% of subjects
+(analytic: 77.1%). No fold passes all primary individual gates.
+
+Group-effect correlations for power, alpha topography, and selected lagged
+connectivity are respectively 0.554, 0.793, and 0.197 (analytic: 0.598,
+0.693, 0.150). These correlations alone overstate preservation: the corrected
+alpha effect norm is only 0.351 of empirical (analytic: 0.613), and the lagged
+connectivity effect norm is only 0.123 (analytic: 0.099), below the fixed 0.25
+gate. The minimum active-parameter synthetic-recovery correlation is 0.452,
+below the fixed 0.50 gate; the weakest parameters are spatial noise contrasts.
+Observation nuisance optima are interior in all folds. Thus the corrected BEM
+is `not_eligible` without weakening any gate.
+
+Artifacts for the corrected result, kept separate from invalid v24:
+
+- `outputs/m52_nested_template_bem_corrected/nested_summary.json` — SHA-256
+  `c738d1afbc536acdf04b92781c36d287c7a11b8a2328f2eaa053b48f487e301`;
+- `outputs/m52_nested_template_bem_corrected/out_of_fold_subject_posteriors.csv` —
+  `73b2a3153ce088d6e8d9d192c297e8031992a441af2e478d275a35f34097daad`;
+- `outputs/m52_nested_template_bem_corrected/nested_group_effects.png` —
+  `7bf1862d4357fd5aa9ad1eb6bc98a7e31774fcf0c4d4f3953d4f67134d7895cc`;
+- `outputs/m52_compare_template_bem_corrected/model_comparison.json` —
+  `7279ec3a5a7c1a0dd28113c2030ea166c9a3e6553e6018606ed5ea8e463cb5ed`;
+- `outputs/m52_compare_template_bem_corrected/model_comparison.png` —
+  `543fd7b93a4f2ac5ef7f5231d817dcb35a1f1480afae1523405705ae9c6680b8`.
+
+## 9. Decision after the corrected test
+
+The corrected forward model has no *demonstrated* improvement in either
+prespecified spatial endpoint: alpha topography is clearly worse, and the
+connectivity point estimate is small, inconsistent across folds, and
+statistically uncertain. Strictly, the Section 13 "neither endpoint improves"
+stop clause is not met by the connectivity *point estimate* alone, which is
+lower. We do not relabel that uncertain movement as a robust gain. Under the
+fixed Section 8 selection priority, the analytic model is preferred
+(worse-of-two spatial ratios 1.032 versus 1.216); the corrected BEM also fails
+several eligibility gates. Continuing to expand this FWD branch is not
+justified by the prespecified evidence.
+
+The correctly registered template BEM remains a useful geometric artifact,
+but it is not selected for M5.2 fitting or TMS target optimization.
+
+The next justified development candidate is the prespecified constrained,
+label-blind correlated-background test using the analytic forward model, with
+its basis learned strictly within each outer-training fold. It must be judged
+by the same unseen, group-effect, recovery, and boundary gates; an apparent
+total-cost improvement accompanied by further suppression of the lagged
+connectivity group effect triggers another stop. A new dynamics extension or
+parcel-orientation change would require a recorded protocol amendment before
+simulation. The old 65-subject M5.1 holdout remains unavailable for model
+selection, and an independent cohort is needed for a final M5.2 claim.

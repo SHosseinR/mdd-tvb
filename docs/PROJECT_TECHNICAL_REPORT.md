@@ -901,9 +901,9 @@ electrode positions were expressed in Colin27/fsaverage MRI coordinates but
 were incorrectly tagged as head coordinates. This displaced sensors from the
 template scalp by as much as 56 mm. Fixing the coordinate frame reduced the
 maximum distance to 6.7 mm. The old production bank is preserved for audit;
-a separately versioned corrected gain is being tested with unchanged candidate
-design, gates, and development-only subject splits. No TMS optimization is
-authorized by either result.
+a separately versioned corrected gain was tested with unchanged candidate
+design, gates, and development-only subject splits. Its results are in
+Section 14. No TMS optimization is authorized by either result.
 
 M5.2 froze the M5.1 release, excluded all 65 previously used holdout subjects,
 and tested a distributed, average-referenced fsaverage three-layer EEG BEM
@@ -926,8 +926,54 @@ they are not evidence against a correctly registered BEM.
 The previous stop decision was withdrawn because the tested implementation was
 geometrically invalid. Correcting an identified coordinate-frame defect while
 holding the scientific design fixed is not post-hoc expansion of the model.
-The corrected bank still needs unseen temporal and outer-fold evaluation;
-neither its success nor failure should be inferred from a simple geometry
-diagnostic. The original 65-subject M5.1 holdout must not be reused for model
+The corrected bank subsequently received unseen temporal and outer-fold
+evaluation; its result must not be inferred from the simple geometry
+diagnostic alone. The original 65-subject M5.1 holdout was not reused for model
 selection. The complete numerical record, defect analysis, and artifact hashes
 are in `M52_DEVELOPMENT_LOG.md`.
+
+---
+
+## 14. M5.2 corrected BEM result and forward-model decision (2026-09-19)
+
+The corrected Kaggle version-25 bank passed the full integrity audit: pinned
+source commit `a8f4bfc`, 2,048 candidates, three replicates, finite complex
+spectra, zero failures, both structural parameters fixed at zero, and the
+expected candidate and corrected-gain hashes. The inventory is
+`M52_BEM_CORRECTED_BANK_MANIFEST.json`. The same 262 development subjects were
+evaluated once each across five outer folds using first-half fitting and
+unseen second-half EEG. The previously consumed 65-subject M5.1 holdout was
+excluded.
+
+Compared with the analytic-sphere M5.1 comparator, the corrected template BEM
+had a higher median unseen total cost ratio (0.800 versus 0.745; paired median
+increase +0.019, 95% bootstrap CI [+0.011, +0.031]) and a higher
+alpha-topography ratio (1.216 versus 0.912; +0.234 [+0.156, +0.294]). The
+topography deficit appeared in every fold. Lagged-connectivity cost improved
+slightly in the aggregate point estimate (1.008 versus 1.032), but the paired
+change −0.012 had a CI [−0.027, +0.009], crossed zero, and appeared in only
+two of five folds. Neither model beats the connectivity null threshold of one.
+
+The corrected BEM's Healthy–MDD-indication effect correlations were 0.554
+for channel-frequency power, 0.793 for alpha topography, and 0.197 for lagged
+connectivity. Its lagged effect amplitude retained only 0.123 of the empirical
+effect, below the fixed 0.25 gate. Minimum active-parameter synthetic recovery
+was 0.452, below 0.50. Zero of five folds passed all primary individual gates.
+The corrected model is therefore **not eligible** for TMS target/protocol
+optimization. This is distinct from the invalid v24 result: correcting the
+electrode frame reduced its alpha-topography ratio from 3.538 to 1.216, but
+did not make it superior to the analytic forward model.
+
+The prespecified forward-model comparison selects the analytic observation
+model for the next M5.2 candidate. The corrected BEM supplies no demonstrated
+improvement in either spatial endpoint: topography is clearly worse, while the
+small connectivity point improvement is uncertain and inconsistent. This
+point estimate means the literal "neither endpoint improves" stop clause is
+not triggered by direction alone, but the fixed selection rule and failed
+eligibility gates do not justify expanding this FWD branch. The next justified
+test is the prespecified constrained, label-blind correlated-background model,
+trained within each outer-training
+fold with the analytic gain. If that model merely improves total cost while
+further suppressing the lagged-connectivity group effect, stop again. A new
+dynamics or parcel-orientation model needs a protocol amendment before a new
+simulation bank. Independent data remain necessary for a final M5.2 claim.
