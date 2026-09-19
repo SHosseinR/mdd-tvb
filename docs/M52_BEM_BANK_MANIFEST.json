@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "release": "m5.2-template-bem-production-bank",
+  "artifact_root": "outputs/m52_template_bem_production",
+  "artifact_count": 7,
+  "artifact_bytes": 1475270897,
+  "validation": {
+    "checks": {
+      "source_commit": true,
+      "candidate_hash": true,
+      "gain_hash_summary": true,
+      "gain_hash_backend": true,
+      "configured_gain_used": true,
+      "candidate_count": true,
+      "replicate_count": true,
+      "zero_failures": true,
+      "parameters_shape": true,
+      "csd_shape": true,
+      "summary_parameters_shape": true,
+      "summary_csd_shape": true,
+      "arrays_finite": true,
+      "summary_finite": true,
+      "structural_fitting_disabled": true,
+      "structural_columns_zero": true,
+      "summary_structural_columns_zero": true,
+      "candidate_table_matches_bank": true,
+      "candidate_indices_ordered": true,
+      "replicate_design_complete": true,
+      "frequency_axis": true,
+      "channel_axis": true,
+      "parameter_axis": true,
+      "gpu_backend": true,
+      "backend_simulation_count": true,
+      "bank_file_size_summary": true
+    },
+    "candidate_rows": 2048,
+    "replicate_rows": 6144,
+    "failure_rows": 0,
+    "parameters_shape": [
+      2048,
+      17
+    ],
+    "parameters_dtype": "float64",
+    "csd_shape": [
+      2048,
+      3,
+      39,
+      26,
+      26
+    ],
+    "csd_dtype": "complex128",
+    "structural_unique_values": {
+      "default_incident_weight_contrast": [
+        0.0
+      ],
+      "dorsattn_salventattn_weight_balance": [
+        0.0
+      ]
+    },
+    "bank_source_commit": "9a1b6ad"
+  },
+  "artifacts": [
+    {
+      "path": "m52_template_bem_production/bank/backend_metadata.json",
+      "bytes": 752,
+      "sha256": "64cfbb37db6146da702e53166ef5d3f3200fb80a1adaba5beb8a28c4aa339aa0"
+    },
+    {
+      "path": "m52_template_bem_production/bank/candidate_parameters.csv",
+      "bytes": 588578,
+      "sha256": "3f21beacf490b2430b13b0e7d246829348787ad2967a23cc33b3eb15b1e221b5"
+    },
+    {
+      "path": "m52_template_bem_production/bank/replicates.csv",
+      "bytes": 58157,
+      "sha256": "92a56213e1e498e7880c28e949c0d1dbb8d77383ed7e773bc0ba0ee539df15e9"
+    },
+    {
+      "path": "m52_template_bem_production/bank/simulation_failures.csv",
+      "bytes": 32,
+      "sha256": "b673cab3b2ac48bd1a704c28fca068ec64e143ab6821f723d409c25fb4f143b3"
+    },
+    {
+      "path": "m52_template_bem_production/bank/spectral_simulation_bank.npz",
+      "bytes": 1474607398,
+      "sha256": "1e1d1006de5572ccfaeb6010ec327ce59831acd28a1db08658e0c59723accd5a"
+    },
+    {
+      "path": "m52_template_bem_summary.json",
+      "bytes": 1104,
+      "sha256": "88c52b71fe1cd2b31504eb9ccc00d9ac769f3ea5fc63672c4422226d40cbcb05"
+    },
+    {
+      "path": "tvbgpu.log",
+      "bytes": 14876,
+      "sha256": "fd28cb2a0730324167fc0a0185f318cd2efe22e510544e4353176b67805d300d"
+    }
+  ]
+}

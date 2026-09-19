@@ -109,26 +109,89 @@ SHA-256:
 `1f2b5a79abb98ddf7c496aea9ee735fb354ed9d0ae2d47cf13faceea0b40b4da`.
 
 A local JAX smoke test completed 8 candidates × 2 replicates with finite
-cross-spectra and zero failures. The full controlled GPU run is the next active
-step. After it completes, the BEM bank will be passed through the same five
-outer development folds and compared with the table in Section 2. No BEM
-choice will be made using the consumed M5.1 holdout.
+cross-spectra and zero failures. The full controlled GPU bank completed on
+Kaggle notebook `shahmadi/tvbgpu`, version 24, from repository commit
+`9a1b6ad`. Two CUDA devices ran 2,048 candidates × three replicates over
+62 simulated seconds (two transient, 60 analysed). The run took 11,365 seconds
+for simulation. Its downloaded 1,474,607,398-byte bank passed every check in
+`scripts/validate_m52_bem_bank.py`: finite 2,048 × 3 × 39 × 26 × 26 CSD,
+complete candidate and replicate tables, zero simulation failures, GPU
+backend, both structural columns exactly zero, and the pinned candidate and
+gain hashes. The full seven-artifact checksum inventory is in
+`M52_BEM_BANK_MANIFEST.json`. The 65 consumed M5.1 holdout subjects were not
+used.
 
-## 5. Current scientific decision
+## 5. Five-fold out-of-fold BEM result
 
-The evidence currently supports continuing M5.2, not beginning TMS target
-optimization. Specifically:
+The BEM bank was passed through the same five development-only outer folds and
+the same chronological first-half fitting / second-half unseen evaluation as
+M5.1. Every subject appears once in the out-of-fold assessment. A paired
+262-subject bootstrap (1,000 resamples) compares identical subjects, features,
+and candidate parameter values. Lower cost ratios are better.
 
-1. the baseline is clearly under-modeling lagged connectivity magnitude;
-2. this deficit persists across nested development folds;
-3. a materially different, anatomically distributed forward model is ready for
-   a controlled test; and
-4. structural-connectome fitting remains disabled because scalp resting EEG did
-   not recover the two bounded structural modes in prior calibration.
+| Unseen metric | Analytic M5.1 | Template BEM | Paired BEM − M5.1 median [95% CI] |
+| --- | ---: | ---: | ---: |
+| Total cost / null | 0.745 | 1.076 | +0.228 [+0.188, +0.278] |
+| Autospectrum cost / null | 0.471 | 0.588 | +0.041 [+0.020, +0.066] |
+| Lagged-connectivity cost / null | 1.032 | 1.046 | +0.012 [−0.0004, +0.0235] |
+| Alpha-topography cost / null | 0.912 | 3.538 | +2.476 [+2.182, +2.830] |
 
-If BEM improves neither alpha-topography nor connectivity, the protocol's next
-candidate is a constrained, diagnosis-blind correlated-background model. If it
-improves total fit only by further suppressing connectivity effects, it must be
-rejected. Neural-dynamics expansion comes only after these observation-model
-tests, with each new parameter required to pass sensitivity and synthetic
-recovery.
+Only 6.5% of subjects had lower total cost under BEM; 3.1% had lower
+alpha-topography cost. BEM's total, connectivity, and topography ratios failed
+the absolute below-null gates. Its total ratio exceeded one in four of five
+folds and its alpha-topography ratio ranged from 2.93 to 4.74 across all five.
+No outer fold passed every primary individual gate. Only 45.8% of subjects
+beat the pooled null, versus 77.1% under M5.1. The minimum active-parameter
+synthetic-recovery correlation was 0.456, below the fixed 0.50 gate.
+
+Group-effect preservation was mixed but does not rescue individual prediction.
+Power-effect correlation rose from 0.598 to 0.659, with a paired-bootstrap
+difference CI of [−0.180, +0.300]. Alpha-topography effect correlation fell
+from 0.693 to 0.490. Lagged-connectivity effect correlation fell from 0.150
+to 0.073 and its effect-norm retention remained only 0.112 (M5.1: 0.099),
+far below the 0.25 eligibility gate. The BEM model therefore has status
+`not_eligible`.
+
+Evidence artifacts, all from the 262 development subjects:
+
+- `outputs/m52_nested_template_bem/nested_summary.json` — SHA-256
+  `aa4694229c4160dc540ec655947e63da8be95f02166b37612809e6b89e5f62e9`;
+- `outputs/m52_nested_template_bem/out_of_fold_subject_posteriors.csv` —
+  `1b9ef75502ce1387a36357ee546383cb4c212b00fa23115b4a360db3e2c4eb77`;
+- `outputs/m52_nested_template_bem/nested_group_effects.png` —
+  `c085e973a066996037b27f08859b4ce970e534f2bf3ac9e506d767eb8b10d4c1`;
+- `outputs/m52_compare_template_bem/model_comparison.json` —
+  `8e7f74b2a3a798a305ae61eb1b11adfa29518457488009ad52529de894b155af`;
+- `outputs/m52_compare_template_bem/model_comparison.png` —
+  `a3430ca7708b3df82c1a901fc01428b9a18980ae692b83465dc64ce15bf9827c`.
+
+## 6. Scientific interpretation and stopping decision
+
+The stronger anatomical forward solve did **not** improve the prespecified
+spatial endpoints in this controlled test. The paired connectivity CI includes
+zero and its point estimate is slightly worse; alpha topography is much worse
+with a CI entirely above zero. The predeclared Section 13 stopping rule in
+`M52_VALIDATION_PROTOCOL.md` therefore applies: stop this model-expansion
+sequence and report, rather than fitting a correlated background or adding
+neural-dynamics degrees of freedom to rescue this failed forward-model branch.
+Do not proceed to TMS target/protocol optimization or use the already-consumed
+65-subject M5.1 holdout to revise this decision.
+
+This result rejects the **specific** template-BEM regional projection used
+here, not BEM physics in general. Its parcel operator assumes one synchronous,
+uniform cortical-normal source amplitude per Schaefer parcel and averages
+signed vertex lead fields; cortical folding can produce substantial
+cancellation. The two spatial noise modes were also originally derived in the
+analytic-gain basis and deliberately kept fixed to isolate the gain change.
+Those are plausible representational limitations, not demonstrated bugs. The
+bank hashes, channel/parcel ordering, average reference, finite arrays, GPU
+provenance, and zero-failure checks passed. A future BEM study would need a
+prospectively specified parcel source distribution or subparcel state model,
+with new development data for selection, rather than post-hoc tuning on these
+five folds.
+
+The next scientific decision is whether to acquire independent spatial data
+(individual electrode digitization/MRI, source-space constraints, or a new EEG
+cohort) or to formulate a narrowly prespecified dynamics hypothesis that can
+be tested in a new locked design. Additional optimization of this frozen
+candidate bank is not a credible path to TMS target selection.
