@@ -30,7 +30,10 @@ come from bad bookkeeping. It comes from five modelling decisions, each measured
    confined to the same 2,048 points.
 5. **The "single-sphere" TVB lead field is an infinite-homogeneous-medium dipole formula**: too focal and
    frontally biased. The fsaverage BEM reproduces empirical volume conduction far better (pattern r 0.94 vs 0.87,
-   neighbour coherence 0.74 vs 0.55; empirical 0.70–0.78). The M5.2 "BEM is worse" result was not a fair test.
+   neighbour coherence 0.74 vs 0.55; empirical 0.70–0.78). The M5.2 test was confounded: limit-cycle regime,
+   spatial modes derived in the analytic basis, and no zero-lag term in the objective. In a fair re-test (§5.4)
+   the BEM wins on lagged coherency and fold stability but *still* loses on alpha topography under the M5.1
+   metric. The lead-field choice is genuinely open until zero-lag structure is scored.
 
 Also: EMG contaminates 30–40 Hz at temporal/lateral-frontal electrodes, and the raw files contain EOG and
 masseter-EMG channels that were discarded. The Healthy group is 6 years younger (p < 0.001). And TDBRAIN
@@ -51,8 +54,10 @@ nested evaluation.
 - the lagged-connectivity Healthy–MDD effect, M5.1's failed gate, goes from r 0.15 with 10 % of its magnitude
   retained to **r 0.39 with 57 % retained**.
 
-Synthetic recovery of the new parameterisation and an external test remain to be done before any stimulation
-work.
+Synthetic recovery (100 off-bank synthetic subjects): 19/27 parameters recovered with r ≥ 0.5 (median 0.71).
+Limbic gains, conduction speed and the fast-generator parameters are *not* identifiable from 26 scalp electrodes
+and must be fixed or tied. Parameter-level Healthy–MDD differences are model-dependent (§5.6). An untouched
+external test is still needed before any stimulation work.
 
 ---
 
@@ -156,7 +161,8 @@ speed were chosen on pooled first halves only. The optimum is broad (y from −3
 - Why M5.2 found the BEM worse: (i) the two data-derived spatial noise modes were computed *in the
   analytic-gain network basis*; (ii) the dynamics were in the limit-cycle regime, so spatial control was weak;
   (iii) the objective has no zero-lag spatial term, which is where the BEM is superior. It was not a fair test
-  of the physics.
+  of the physics. The fair re-test in §5.4 still finds worse alpha topography with the BEM under the M5.1
+  metric, but better lagged coherency and fold stability, and less artificial sensor noise.
 - The uniform-sign parcel average retains a median 63 % of the vertex field (5th percentile 37 %).
   Orientation-aware aggregation deserves a test.
 
@@ -244,7 +250,11 @@ available.
 | `scripts/linear/build_analytic_bank.py` | Sobol / adaptive banks of certified global states |
 | `scripts/linear/fit_subjects_nested.py` | per-subject continuous fit of spatial gains, nuisance terms and shared-drive share |
 | `scripts/linear/posterior_average.py` | nested temperature choice (other folds only) and posterior-averaged predictions |
-| `scripts/linear/compare_with_m51.py` | paired bootstrap against the M5.2 nested baseline and group effects |
+| `scripts/linear/refine_subjects.py` | continuous per-subject refinement of all parameters (GPU), stability-constrained |
+| `scripts/linear/compare_with_m51.py`, `tabulate_variants.py` | paired bootstrap against the M5.2 nested baseline, group effects, variant tables |
+| `scripts/linear/synthetic_recovery_linear.py` | off-bank synthetic recovery (complex-Wishart halves) |
+| `scripts/linear/*experiment*.py`, `common_drive_origin_scan.py` | mechanism tests for lagged coherency |
+| `scripts/linear/kaggle/` | Kaggle GPU job scripts and dataset packers |
 | `scripts/linear/audit_regime.py`, `scripts/audit_m51_failure_modes.py` | the audits in §2 |
 | `tests/test_linear_spectral.py` | 5 tests (NumPy = JAX, gradients, stability, fold margin, agreement with the stochastic simulator) |
 
@@ -384,8 +394,9 @@ folds, unseen halves, fold transformers, pooled null.
 **Status against the fixed M5.2 gates.** The total, autospectrum, topography and lagged-coherency medians are
 all below the null. A majority beats the null. All group-effect gates pass, including the lagged-connectivity
 norm gate that stopped M5.1. The nuisance terms are interior. Fold stability passes (TVB 4/5, BEM 5/5).
-**Not yet evaluated:** synthetic parameter recovery for the new parameterisation (§5.5), and an untouched
-external test. All development decisions used these 262 subjects: the variant choice (drive + hemisphere +
+Synthetic recovery (§5.5): 19/27 parameters r ≥ 0.5. It fails for limbic gains, conduction speed and the
+fast-generator parameters, which should be fixed or tied before any parameter is interpreted. **Not yet
+evaluated:** an untouched external test. All development decisions used these 262 subjects: the variant choice (drive + hemisphere +
 source background) and the drive origin were selected on them, so the numbers carry mild selection
 optimism. The consumed 65-subject M5.1 holdout was never used.
 
@@ -398,7 +409,39 @@ spatial covariance, which is the part of the data where they differ physically.
 
 ### 5.5 Synthetic recovery of the new parameterisation
 
-RECOVERY_PLACEHOLDER
+Design: 100 real subjects' **continuously refined** parameter sets serve as ground truth. They are not bank
+states, which avoids the in-bank inflation found in M5.1 (§F4). The exact model CSD is converted into two
+independent complex-Wishart halves with 60 degrees of freedom per 1-Hz bin (Welch-like estimation noise).
+These are refitted with the identical pipeline: bank → adaptive bank → continuous refinement.
+(`scripts/linear/synthetic_recovery_linear.py`, Kaggle job `mddtvb-linear-recovery`.)
+
+| parameter group | recovery r (continuous refinement) |
+|---|---|
+| shared-drive share | **0.96** |
+| source-background fraction / observation-noise fraction | **0.91 / 0.89** |
+| visual gains LH / RH | **0.89 / 0.91** |
+| default-mode gains LH / RH | 0.66 / **0.89** |
+| dorsal-attention gains LH / RH | **0.81 / 0.84** |
+| somatomotor gains LH / RH | 0.64 / 0.76 |
+| salience/ventral-attention gains LH / RH | 0.72 / 0.55 |
+| visual / dorsal-attention time contrasts | **0.89** / 0.71 |
+| a-scale / b-scale | 0.79 / **0.81** |
+| global coupling / mean drive | 0.66 / 0.60 |
+| control-network gains LH / RH | 0.48 / 0.42 |
+| noise time constant | 0.41 |
+| conduction speed / fast ratio / fast fraction | 0.31 / 0.30 / 0.31 |
+| **limbic gains LH / RH** | **0.11 / 0.13** |
+
+19 of 27 parameters have r ≥ 0.5 (median 0.71; bank MAP alone: 0.63). Continuous refinement improves recovery,
+as expected. The non-identified set is physiologically sensible: limbic cortex is deep and ventral, so it is
+nearly invisible to 26 scalp electrodes. Conduction speed and the fast-generator parameters mostly trade off
+against each other. **Consequences:** fix or marginalise speed, the fast-generator ratio/fraction and noise τ at
+population values, tie limbic (and possibly control) gains to their neighbours, and never interpret limbic
+contrasts from scalp EEG. The one group difference that survived model changes (lower left dorsal-attention
+gain, §5.6) belongs to the well-identified set (r = 0.81).
+
+Caveat: this is recovery *within* the model class (no misspecification, EMG or artefacts). It is necessary,
+not sufficient.
 
 ### 5.6 Exploratory parameter differences: model-dependent, do not interpret yet
 
@@ -449,11 +492,14 @@ objective contains no beta coordinates (§F3). That is the next objective fix, n
    - Add the zero-lag spatial covariance (real coherency).
    - Consider the complex-Wishart (Whittle) likelihood of the full CSD with explicit nuisance terms.
    - Exclude 30–40 Hz at EMG-prone electrodes, or model EMG.
-4. **Continuous inference end-to-end.** Refine global parameters with the JAX gradients on GPU, then use a
-   Laplace/variational posterior (DCM-style) or neural posterior estimation trained on analytic spectra.
-   Those are now millions of times cheaper than stochastic simulation.
-5. **Adopt the BEM lead field and test it fairly**, in the stable regime, with zero-lag structure in the
-   objective and spatial modes derived in the BEM basis. Test orientation-aware parcel aggregation.
+4. **Continuous inference end-to-end.** MAP refinement of all parameters with JAX gradients is implemented and
+   helps (§5.3). Next, fix or tie the non-identified parameters (speed, fast-generator ratio/fraction, noise τ,
+   limbic and control gains; §5.5). Then replace MAP with a Laplace/variational posterior (DCM-style) or with
+   neural posterior estimation trained on analytic spectra, which are now millions of times cheaper than
+   stochastic simulation.
+5. **Keep both lead fields in play until the objective scores zero-lag structure.** TVB wins alpha topography;
+   the BEM wins lagged coherency, fold stability and physical volume conduction. Test orientation-aware parcel
+   aggregation for the BEM.
 6. **Re-preprocess the EEG** with the TDBRAIN authors' pipeline (bipolar-EOG regression, EMG and kurtosis
    detection, bridging, channel repair) or ICA. The EOG and masseter-EMG channels are in the raw BDF files.
    Add eyes-open recordings: alpha blocking is a strong mechanistic constraint.
@@ -486,12 +532,19 @@ objective contains no beta coordinates (§F3). That is the next objective fix, n
 .conda/python.exe scripts/linear/travelling_wave_experiment.py
 .conda/python.exe scripts/linear/common_drive_experiment.py
 .conda/python.exe scripts/linear/common_drive_origin_scan.py
-# figures
+# continuous refinement (GPU recommended) and synthetic recovery
+.conda/python.exe scripts/linear/refine_subjects.py --run <nested run> --bank <banks...> --common-drive --source-background
+.conda/python.exe scripts/linear/synthetic_recovery_linear.py generate && ... summarise
+# tables and figures
+.conda/python.exe scripts/linear/tabulate_variants.py "label=path/to/subject_fits.csv" ...
 .conda/python.exe scripts/linear/make_report_figures.py
 ```
 
-The Kaggle GPU job (`outputs/kaggle_linear/kernel/mddtvb_linear_bem.py`) runs the full variant grid for both
-lead fields from two private datasets (`shahmadi/mdd-tvb-linear-bundle`, `shahmadi/mdd-tvb-linear-code`).
+The Kaggle GPU jobs are in `scripts/linear/kaggle/`: `mddtvb_linear_final.py` (final model, both lead fields)
+and `mddtvb_linear_recovery.py` (synthetic recovery). They read two private datasets
+(`shahmadi/mdd-tvb-linear-bundle`, `shahmadi/mdd-tvb-linear-code`; packers `pack_bundle.py`, `pack_code.py`).
+Downloaded GPU results are under `outputs/linear_regime/kaggle/{grid_v4,refine_v5,final,recovery}`; they are
+git-ignored, like all outputs.
 
 ---
 
