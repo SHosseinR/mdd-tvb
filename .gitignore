@@ -8,3 +8,6 @@ __pycache__/
 .kaggle_work/
 outputs/*
 !outputs/.gitkeep
+slides
+.codex-slide-build
+.chart-data*
