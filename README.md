@@ -25,6 +25,17 @@ See `docs/M52_DEVELOPMENT_LOG.md` and `docs/PROJECT_TECHNICAL_REPORT.md` for
 the full numerical record. The earlier misregistered BEM run is preserved but
 explicitly invalid for that comparison.
 
+**Independent audit and redesign (2026-09-24):** see
+`docs/INDEPENDENT_AUDIT_2026-09-24.md`. Main findings: the fitted M5.1 states
+are deterministic limit cycles (318/327 subjects), the model class could not
+produce the empirical lagged coherency, the reliability-filtered objective was
+effectively alpha-only, and TVB's analytic EEG gain is an infinite-medium
+formula. A new analytic linear-regime spectrum of the same delayed dual
+Jansen–Rit network (`src/mdd_tvb/linear_spectral.py`, `linear_jax.py`,
+`scripts/linear/`) fits subjects continuously in the stable, noise-driven
+regime and adds a shared delayed alpha drive that restores the lagged
+connectivity group effect.
+
 ## Scientific definition
 
 The supplied streamline-count matrix is transformed with `log1p`, then globally

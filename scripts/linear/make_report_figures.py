@@ -73,8 +73,8 @@ def fig_lagged_pattern() -> None:
             base.append(p["csd"][split.subject_split.values == "holdout"][:, band].mean(1))
     model, _ = lagged(np.concatenate(base))
     panels.append(("M5.1 bank posterior (out-of-fold predictions, mean)", model.mean(0)))
-    for name, path in (("New: linear regime + shared delayed drive (out-of-fold, mean)",
-                        ROOT / "outputs/linear_regime/nested_tvb_common/posterior/predictions.npz"),):
+    for name, path in (("Final model (TVB lead, refined; out-of-fold mean)",
+                        ROOT / "outputs/linear_regime/kaggle/final/final_tvb_refined/predictions.npz"),):
         if path.is_file():
             csd = np.load(path)["csd"]
             model, _ = lagged(csd[:, band].mean(1))
@@ -139,7 +139,7 @@ def fig_spectra() -> None:
     f = val.frequency_hz
     ids = val.subject_ids.astype(str)
     runs = {"M5.1 nested posterior": None,
-            "new (analytic, linear regime)": ROOT / "outputs/linear_regime/nested_tvb_common/posterior/predictions.npz"}
+            "new (analytic, linear regime)": ROOT / "outputs/linear_regime/kaggle/final/final_tvb_refined/predictions.npz"}
     fig, ax = plt.subplots(figsize=(7, 4.6), constrained_layout=True)
     emp = np.log(np.real(np.einsum("sfii->sf", val.csd)))
     emp -= emp.mean(1, keepdims=True)
@@ -158,7 +158,7 @@ def fig_spectra() -> None:
         p = np.load(path)
         new = np.log(np.real(np.einsum("sfii->sf", p["csd"])))
         new -= new.mean(1, keepdims=True)
-        ax.plot(f, new.mean(0), "C0", label="new analytic linear-regime fit (out-of-fold)")
+        ax.plot(f, new.mean(0), "C0", label="final model, TVB lead, refined (out-of-fold)")
     ax.set_xlabel("Hz")
     ax.set_ylabel("centred log channel-summed power")
     ax.legend(fontsize=8)

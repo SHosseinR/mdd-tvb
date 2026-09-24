@@ -85,6 +85,9 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=150)
     ap.add_argument("--prior", type=float, default=0.02)
     ap.add_argument("--max-subjects", type=int, default=0)
+    ap.add_argument("--emp-dir", default="outputs/m5_spectral_m51_production/empirical",
+                    help="directory with cross_spectra_fit.npz / cross_spectra_validation.npz")
+    ap.add_argument("--subjects-file", default=None, help="optional text file restricting fitted subjects")
     ap.add_argument("--spatial", choices=["network", "network_hemisphere"], default="network")
     ap.add_argument("--max-small-gain", type=float, default=1.0)
     ap.add_argument("--source-background", action="store_true")
@@ -161,7 +164,8 @@ def main() -> None:
         return upper_to_full(u), (upper_to_full(uc) if USE_COMMON else None)
 
     splits = pd.read_csv(ROOT / "configs/m52_nested_splits.csv")
-    emp = ROOT / "outputs/m5_spectral_m51_production/empirical"
+    emp = ROOT / args.emp_dir
+    only = (set(Path(ROOT / args.subjects_file).read_text().split()) if args.subjects_file else None)
     fit = load_cross_spectral_collection(emp / "cross_spectra_fit.npz")
     val = load_cross_spectral_collection(emp / "cross_spectra_validation.npz")
     index = {s: i for i, s in enumerate(fit.subject_ids.astype(str))}
@@ -230,6 +234,8 @@ def main() -> None:
         for sid in test:
             if args.max_subjects and done >= args.max_subjects:
                 break
+            if only is not None and sid not in only:
+                continue
             i = index[sid]
             target = weighted_features(jnp.asarray(fit.csd[i]), T)
             costs = np.sum((screen_features - np.asarray(target)[None]) ** 2, axis=1)

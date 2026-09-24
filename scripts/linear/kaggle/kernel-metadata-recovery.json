@@ -1,0 +1,19 @@
+{
+ "id": "shahmadi/mddtvb-linear-recovery",
+ "title": "mddtvb-linear-recovery",
+ "code_file": "mddtvb_linear_recovery.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": true,
+ "dataset_sources": [
+  "shahmadi/mdd-tvb-linear-bundle",
+  "shahmadi/mdd-tvb-linear-code"
+ ],
+ "kernel_sources": [],
+ "competition_sources": [],
+ "model_sources": [],
+ "machine_shape": "NvidiaTeslaT4"
+}

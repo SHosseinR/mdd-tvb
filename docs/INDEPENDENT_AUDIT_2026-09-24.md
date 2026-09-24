@@ -40,8 +40,19 @@ is already on disk. That is the outcome data a TMS-targeting study actually need
 **What I built:** an exact analytic (linear-regime) cross-spectrum of the *same* dual Jansen–Rit network
 (NumPy reference + differentiable JAX), with stability certification and a Jansen–Rit fold guard. It is validated
 against the stochastic simulator (log-spectrum r = 0.9997) and ~50× faster than simulation on a Kaggle T4.
-Around it: continuous per-subject fitting of spatial and nuisance parameters, a shared delayed-drive mechanism,
-nested posterior averaging, and the identical M5.2 nested evaluation. Results are in §5.
+Around it: continuous per-subject fitting, a shared delayed-drive mechanism, per-hemisphere gains, a
+lead-field-projected aperiodic background, nested posterior averaging, GPU refinement, and the identical M5.2
+nested evaluation.
+
+**Result (262 development subjects, unseen halves; §5.4).** Compared with M5.1 on identical folds and features:
+- total 0.745 → **0.688**, autospectrum 0.471 → **0.424**, alpha topography 0.912 → **0.510** (all significant);
+- lagged coherency 1.032 → **0.967** (BEM lead: 0.917);
+- subjects beating the null 77 % → **82 %**; folds with all four blocks below the null 1/5 → **4/5** (BEM: **5/5**);
+- the lagged-connectivity Healthy–MDD effect, M5.1's failed gate, goes from r 0.15 with 10 % of its magnitude
+  retained to **r 0.39 with 57 % retained**.
+
+Synthetic recovery of the new parameterisation and an external test remain to be done before any stimulation
+work.
 
 ---
 
@@ -163,9 +174,17 @@ speed were chosen on pooled first halves only. The optimum is broad (y from −3
 - **Age.** Healthy 40.4 y vs MDD 46.2 y (p < 0.001). Adjusting for age and sex shrinks the channel × frequency
   power effect by 17 % (direction r = 0.92). Age slows alpha peak frequency and flattens the aperiodic exponent.
 - **Labels.** 150 of 151 "MDD" recordings have formal status UNKNOWN, so the group is MDD-indication.
-- **Unused outcome data.** 167 MDD patients treated with rTMS (protocols coded 1/2/3; 48/91/32 records),
-  Responder 106/69, Remitter 89/86, BDI pre/post for all. Their baseline EC and EO EEG are on disk and were
-  excluded by the preprocessing script.
+- **Unused outcome data.** 167 MDD patients were treated with rTMS, with Remitter 89/86 and BDI pre/post for
+  every record (mean BDI 31.9 → 16.0). Their baseline EC and EO EEG are on disk and were excluded by the
+  preprocessing script. Session-1 records with both EC and EO EEG (164):
+
+  | rTMS protocol code | non-responder | responder | total |
+  |---|---|---|---|
+  | 1 | 17 | 27 | 44 |
+  | 2 | 29 | 55 | 84 |
+  | 3 | 21 | 11 | 32 |
+  | missing | 0 | 4 | 4 |
+  | **all** | **67** | **97** | **164** |
 
 ### F7. Gates are achievable in principle and noisy in practice
 
@@ -321,11 +340,84 @@ The M5.1 failure was near-total attenuation of the lagged-connectivity effect (1
 removed: 70 % of the empirical effect magnitude is retained, with the correct direction, and every group-effect
 gate passes.
 
-### 5.3 Final model
+### 5.3 Continuous refinement (GPU)
 
-FINAL_PLACEHOLDER
+Starting from each subject's bank MAP, Adam updates all ≈ 20 parameters (10 global dynamics, spatial gains,
+nuisance terms, drive share) through the differentiable analytic spectrum, 40 steps. Stability is enforced by
+penalties, and only certified-stable iterates are kept. Shared-drive model, adaptive bank:
 
-### 5.4 Mechanism experiments
+| Variant | total | autospectrum | lagged | alpha topo | beats null | lagged group effect r / norm |
+|---|---|---|---|---|---|---|
+| M5.1 bank | 0.745 | 0.471 | 1.032 | 0.912 | 77 % | 0.150 / 0.10 |
+| TVB, bank MAP | 0.771 | 0.495 | 1.007 | 0.843 | 73 % | 0.255 / 0.63 |
+| **TVB, + continuous refinement** | **0.742** | 0.488 | **0.971** | **0.842** | 75 % | **0.289 / 0.63** |
+| BEM, bank MAP | 0.756 | 0.577 | 0.923 | 0.960 | 74 % | 0.254 / 0.91 |
+| **BEM, + continuous refinement** | **0.737** | 0.536 | **0.904** | 0.957 | **78 %** | 0.243 / **0.97** |
+
+Refinement improves the total, autospectrum and lagged coherency for both lead fields. The fit-half totals
+fall to 0.66 and 0.65: continuous inference makes much fuller use of the first half than a finite bank does.
+
+### 5.4 Final model
+
+Final model = stable-regime analytic spectrum + shared delayed alpha drive + per-hemisphere network gains +
+lead-field-projected aperiodic source background. It is fitted on a certified bank (1,600 Sobol + 1,200 adaptive
+states), then refined continuously per subject (GPU). Scoring is unchanged: 262 development subjects, 5 outer
+folds, unseen halves, fold transformers, pooled null.
+
+| Block (unseen / null) | M5.1 bank | **Final, TVB lead** | paired change [95 % CI] | **Final, BEM lead** | paired change [95 % CI] |
+|---|---|---|---|---|---|
+| total | 0.745 | **0.688** | −0.052 [−0.067, −0.025] | **0.683** | −0.053 [−0.084, −0.029] |
+| autospectrum | 0.471 | **0.424** | −0.061 [−0.076, −0.034] | **0.425** | −0.048 [−0.080, −0.031] |
+| lagged coherency | 1.032 | **0.967** | +0.028 [−0.010, +0.047] | **0.917** | −0.023 [−0.061, +0.014] |
+| alpha topography | 0.912 | **0.510** | −0.290 [−0.344, −0.223] | **0.713** | −0.150 [−0.216, −0.102] |
+| subjects beating the null | 77 % | **82 %** | | **82 %** | |
+| folds with all four blocks < 1 | 1 / 5 | **4 / 5** | | **5 / 5** | |
+| diagonal "observation noise" (median) | 62 % | 39 % | | 23 % | |
+
+| Group effect (out-of-fold, unseen halves) | M5.1 | Final TVB | Final BEM | gate |
+|---|---|---|---|---|
+| power effect r (norm retained) | 0.598 (0.56) | 0.608 (0.91) | 0.670 (0.71) | r ≥ 0.30 |
+| alpha-topography effect r (norm) | 0.693 (0.61) | 0.723 (0.94) | 0.705 (0.67) | r ≥ 0.30 |
+| **lagged-connectivity effect r (norm)** | **0.150 (0.10)** | **0.393 (0.57)** | 0.199 (0.79) | r ≥ 0.10, norm ≥ 0.25 |
+| complex-coherency effect r | 0.062 | 0.269 | 0.182 | descriptive |
+
+**Status against the fixed M5.2 gates.** The total, autospectrum, topography and lagged-coherency medians are
+all below the null. A majority beats the null. All group-effect gates pass, including the lagged-connectivity
+norm gate that stopped M5.1. The nuisance terms are interior. Fold stability passes (TVB 4/5, BEM 5/5).
+**Not yet evaluated:** synthetic parameter recovery for the new parameterisation (§5.5), and an untouched
+external test. All development decisions used these 262 subjects: the variant choice (drive + hemisphere +
+source background) and the drive origin were selected on them, so the numbers carry mild selection
+optimism. The consumed 65-subject M5.1 holdout was never used.
+
+![final paired comparison](figures/audit_2026-09-24/final_tvb_paired_comparison.png)
+
+Which lead field? TVB gives much better alpha topography (0.51 vs 0.71). The BEM gives better lagged
+coherency, more stable folds and physically correct volume conduction, and it needs less artificial sensor
+noise (23 % vs 39 %). My recommendation is to carry **both** forward until the objective includes zero-lag
+spatial covariance, which is the part of the data where they differ physically.
+
+### 5.5 Synthetic recovery of the new parameterisation
+
+RECOVERY_PLACEHOLDER
+
+### 5.6 Exploratory parameter differences: model-dependent, do not interpret yet
+
+MDD-indication − Healthy, age- and sex-adjusted, SD units, bootstrap 95 % CIs, no multiplicity correction:
+
+| parameter | intermediate model (TVB + drive, 7 gains) | final model (TVB, refined, 14 gains) |
+|---|---|---|
+| global coupling | **+0.38** [+0.14, +0.61] | −0.05 [−0.30, +0.19] |
+| mean drive μ | −0.24 [−0.47, −0.01] | +0.02 [−0.22, +0.24] |
+| limbic gain (network / left) | **+0.32** [+0.07, +0.58] | +0.25 [−0.01, +0.51] (LH) |
+| dorsal-attention gain (network / left) | **−0.33** [−0.59, −0.08] | **−0.35** [−0.59, −0.14] (LH) |
+| intervals excluding 0 | 7 / 17 | 3 / 24 (≈ 1.2 expected by chance) |
+
+Most "group differences" change or vanish when the model is improved. Global coupling, for example, flips
+from +0.38 to −0.05. This is the identifiability problem in concrete form: parameter-level contrasts are not yet
+robust to reasonable model changes. Only reduced left dorsal-attention input gain is stable across both
+versions. Treat it as a hypothesis for pre-registered testing (recovery → correction → replication), not a result.
+
+### 5.7 Mechanism experiments
 
 See §F2. Tract delays and slow local coupling cannot create lagged coherency in a stable network. A shared,
 delayed alpha drive radiating from dorsal midline cortex reproduces the group pattern (r = 0.59, out-of-fold
@@ -341,6 +433,9 @@ objective contains no beta coordinates (§F3). That is the next objective fix, n
 
 ## 6. Recommendations (ordered by expected impact)
 
+0. **Adopt the final model of §5.4 as the new M5 baseline**: stable regime, analytic spectrum, shared delayed
+   drive, per-hemisphere gains, source background, continuous per-subject fitting. Keep M5.1 as the historical
+   comparator. Freeze the variant choices now and do not tune further on these 262 subjects.
 1. **Fit resting EEG in the stable, noise-driven regime and use the analytic spectrum.** Enforce damped nodes,
    no Jansen–Rit fold (fold margin), and certified network stability (small-gain or Nyquist). Fit with the
    closed-form CSD: exact expectation, no seed noise, gradients. Keep the stochastic TVB/JAX simulator as the
