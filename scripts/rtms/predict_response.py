@@ -181,6 +181,7 @@ def main() -> None:
     ap.add_argument("--perm-reps", type=int, default=5)
     ap.add_argument("--n-perm", type=int, default=500)
     ap.add_argument("--out", default="outputs/rtms_prediction")
+    ap.add_argument("--only", nargs="*", default=None, help="feature sets to run, e.g. M4 C+E+M4; merged into the summary")
     args = ap.parse_args()
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -201,7 +202,10 @@ def main() -> None:
         sets += [("M3",)]
     if "M4" in blocks:
         sets += [("M4",), ("C", "E", "M4")]
-    results = {}
+    if args.only:
+        sets = [tuple(x.split("+")) for x in args.only]
+    previous = out / "prediction_summary.json"
+    results = json.loads(previous.read_text())["results"] if (args.only and previous.is_file()) else {}
     for s in sets:
         X = np.column_stack([blocks[b].loc[ids].to_numpy(float) for b in s])
         auc, bacc = cv_scores(X, y, args.reps)
@@ -220,7 +224,9 @@ def main() -> None:
         results["+".join(s)] = res
         print("+".join(s), json.dumps({k: round(v, 3) if isinstance(v, float) else v for k, v in res.items()}), flush=True)
     summary = {"subjects": len(ids), "responders": int(y.sum()), "results": results}
-    if "M3" in blocks:
+    if args.only and previous.is_file() and "H3" in json.loads(previous.read_text()):
+        summary["H3"] = json.loads(previous.read_text())["H3"]
+    elif "M3" in blocks:
         summary["H3"] = h3(args.m3_dev, args.m3)
         print("H3", summary["H3"])
     (out / "prediction_summary.json").write_text(json.dumps(summary, indent=1))

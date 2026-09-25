@@ -115,6 +115,21 @@ for stage in STAGES:
         fit(f"dev_{lead}_v1", lead, V1, DEV)
     elif kind == "devnomask":  # muscle-channel masking switched off
         fit(f"dev_{lead}_nomask", lead, f"{V2}/dev_restEC/empirical", DEV + ["--no-emg-mask"])
+    elif kind == "synth":  # synthetic recovery from a finished M5.4 job (attached as a kernel source)
+        (work / R).mkdir(parents=True, exist_ok=True)
+        for rel in (f"population_{lead}.json", f"dev_{lead}/subject_fits.csv"):
+            hits = [h for h in glob.glob(f"/kaggle/input/**/{rel}", recursive=True) if "m54" in h]
+            (work / R / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(hits[0], work / R / rel)
+        run(f"bank_{lead}", ["scripts/linear/build_analytic_bank.py", "--lead", lead, "--samples", "2000", "--half-width", "1.2",
+                             "--population", f"{R}/population_{lead}.json", "--out", f"{R}/bank_{lead}.npz"] + FIX)
+        S = f"{R}/synthetic_{lead}"
+        run(f"synthetic_{lead}_generate", ["scripts/m54/m54_synthetic.py", "generate", "--lead", lead,
+                                           "--fits", f"{R}/dev_{lead}/subject_fits.csv", "--population", f"{R}/population_{lead}.json",
+                                           "--emp-dir", f"{V2}/dev_restEC/empirical", "--n", "120", "--out", S], x64="1")
+        if fit(f"synthetic_{lead}_fit", lead, f"{S}/empirical", ["--subjects-file", f"{S}/subjects.txt"]):
+            run(f"synthetic_{lead}_summary", ["scripts/m54/m54_synthetic.py", "summarise", "--out", S,
+                                              "--recovered", f"{R}/synthetic_{lead}_fit/subject_fits.csv"])
     elif kind == "m53v2":  # frozen M5.3 pipeline on the v2 spectra (TVB)
         pop = "configs/m53_frozen/population_fit_tvb.json"
         B = "outputs/m53v2"
