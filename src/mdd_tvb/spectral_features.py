@@ -204,8 +204,14 @@ def estimate_cross_spectrum(
     eeg: np.ndarray,
     sfreq_hz: float,
     settings: CrossSpectralConfig,
+    starts: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    """Estimate a binned complex CSD using overlapped Hann epochs."""
+    """Estimate a binned complex CSD using overlapped Hann epochs.
+
+    ``starts`` optionally restricts the estimate to epochs beginning at these
+    samples (for example only artefact-free epochs); by default every epoch on
+    the half-overlapping grid is used.
+    """
 
     data = np.asarray(eeg, dtype=float)
     if data.ndim != 2 or data.shape[1] < 2 or not np.isfinite(data).all():
@@ -214,9 +220,14 @@ def estimate_cross_spectrum(
     data = data - data.mean(axis=0, keepdims=True)
     nperseg = int(round(settings.epoch_seconds * sfreq_hz))
     step = nperseg // 2
-    if data.shape[0] < nperseg * 2:
-        raise ValueError("EEG segment is too short for stable cross spectra")
-    starts = np.arange(0, data.shape[0] - nperseg + 1, step, dtype=int)
+    if starts is None:
+        if data.shape[0] < nperseg * 2:
+            raise ValueError("EEG segment is too short for stable cross spectra")
+        starts = np.arange(0, data.shape[0] - nperseg + 1, step, dtype=int)
+    else:
+        starts = np.asarray(starts, dtype=int)
+        if len(starts) < 2 or starts.min() < 0 or starts.max() + nperseg > data.shape[0]:
+            raise ValueError("Epoch starts must give at least two epochs inside the data")
     window = np.hanning(nperseg)
     spectra = np.stack(
         [

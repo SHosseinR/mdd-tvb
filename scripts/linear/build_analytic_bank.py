@@ -38,6 +38,8 @@ def main() -> None:
                     help="subject_fits.csv files; sample around the global states subjects selected")
     ap.add_argument("--adaptive-bank", nargs="*", default=None,
                     help="bank(s) whose 'unit' vectors the subject_fits 'state' column indexes")
+    ap.add_argument("--fix", nargs="*", default=[],
+                    help="global parameter names held at the population value in every state")
     args = ap.parse_args()
     cfg = load_spectral_m5_config(ROOT / "configs/m5_spectral.toml")
     lin = CandidateLinearizer(cfg)
@@ -70,6 +72,9 @@ def main() -> None:
     else:
         u = center[None, :] + (2.0 * unit - 1.0) * args.half_width
         u[0] = center
+
+    for name in args.fix:
+        u[:, LJ.GLOBAL_NAMES.index(name)] = center[LJ.GLOBAL_NAMES.index(name)]
 
     origin = np.asarray(args.common_origin, dtype=float)
 

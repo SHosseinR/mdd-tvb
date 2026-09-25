@@ -41,7 +41,7 @@ def plans(args, fit, folds=None):
         T = load_transformer_arrays(ROOT / args.external_transformer)
         dev = load_cross_spectral_collection(ROOT / args.null_emp_dir / "cross_spectra_fit.npz")
         dev_index = {s: i for i, s in enumerate(dev.subject_ids.astype(str))}
-        null = [dev.csd[dev_index[s]] for s in development_ids()]
+        null = [dev.csd[dev_index[s]] for s in development_ids() if s in dev_index]
         test = list(fit.subject_ids.astype(str))
         yield EXTERNAL_FOLD, T, null, test
         return
@@ -50,7 +50,7 @@ def plans(args, fit, folds=None):
         if folds is not None and fold not in folds:
             continue
         fr = splits[splits.outer_fold == fold]
-        train = [index[s] for s in fr.loc[fr.outer_role == "training", "subject_id"].astype(str)]
-        test = list(fr.loc[fr.outer_role == "validation", "subject_id"].astype(str))
+        train = [index[s] for s in fr.loc[fr.outer_role == "training", "subject_id"].astype(str) if s in index]
+        test = [s for s in fr.loc[fr.outer_role == "validation", "subject_id"].astype(str) if s in index]
         T = load_transformer_arrays(ROOT / f"outputs/m52_nested_baseline/outer_{fold}/spectral_transformer.npz")
         yield int(fold), T, [fit.csd[i] for i in train], test
