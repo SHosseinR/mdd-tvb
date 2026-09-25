@@ -27,6 +27,7 @@ from mdd_tvb.linear_spectral import CandidateLinearizer  # noqa: E402
 from mdd_tvb.linear_fit import load_transformer_arrays, feature_blocks, weighted_features  # noqa: E402
 from mdd_tvb import linear_jax as LJ  # noqa: E402
 import fit_subjects_nested as FSN  # noqa: E402
+import plans as PL  # noqa: E402
 
 
 def logit(p):
@@ -52,6 +53,7 @@ def main() -> None:
                     help="directory with cross_spectra_fit.npz / cross_spectra_validation.npz")
     ap.add_argument("--subjects-file", default=None, help="optional text file restricting fitted subjects")
     ap.add_argument("--out", default=None)
+    PL.add_plan_arguments(ap)
     args = ap.parse_args()
     run = ROOT / args.run
     out = ROOT / (args.out or f"{args.run}_refined")
@@ -118,7 +120,6 @@ def main() -> None:
     vg = jax.jit(jax.value_and_grad(objective, has_aux=True))
     predict = jax.jit(lambda theta: model(theta)[0])
 
-    splits = pd.read_csv(ROOT / "configs/m52_nested_splits.csv")
     emp = ROOT / args.emp_dir
     only = (set(Path(ROOT / args.subjects_file).read_text().split()) if args.subjects_file else None)
     fit = load_cross_spectral_collection(emp / "cross_spectra_fit.npz")
@@ -127,13 +128,10 @@ def main() -> None:
     rows, preds = [], {}
     t0 = time.time()
     done = 0
-    for fold in sorted(splits.outer_fold.unique()):
-        fr = splits[splits.outer_fold == fold]
-        T = load_transformer_arrays(ROOT / f"outputs/m52_nested_baseline/outer_{fold}/spectral_transformer.npz")
-        train = [index[s] for s in fr.loc[fr.outer_role == "training", "subject_id"].astype(str)]
-        blocks_train = [feature_blocks(jnp.asarray(fit.csd[i]), T) for i in train]
+    for fold, T, null_csds, _ in PL.plans(args, fit, folds=set(fits.outer_fold.unique())):
+        blocks_train = [feature_blocks(jnp.asarray(c), T) for c in null_csds]
         pooled_blocks = [np.mean([np.asarray(b[k]) for b in blocks_train], 0) for k in range(3)]
-        pooled_total = np.mean([np.asarray(weighted_features(jnp.asarray(fit.csd[i]), T)) for i in train], 0)
+        pooled_total = np.mean([np.asarray(weighted_features(jnp.asarray(c), T)) for c in null_csds], 0)
         for _, srow in fits[fits.outer_fold == fold].iterrows():
             if args.max_subjects and done >= args.max_subjects:
                 break

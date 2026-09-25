@@ -22,10 +22,12 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts/linear"))
 
 import jax, jax.numpy as jnp  # noqa: E402
 from mdd_tvb.spectral_features import load_cross_spectral_collection  # noqa: E402
 from mdd_tvb.linear_fit import load_transformer_arrays, feature_blocks, weighted_features  # noqa: E402
+import plans as PL  # noqa: E402
 
 N_CH = 26
 IU = np.triu_indices(N_CH)
@@ -97,6 +99,7 @@ def main() -> None:
                     help="equilibrium residual bound (use ~1e-4 for float32 banks)")
     ap.add_argument("--common-drive", action="store_true",
                     help="fit the share of a shared delayed alpha drive (bank must contain common_upper)")
+    PL.add_plan_arguments(ap)
     args = ap.parse_args()
     global MAP, SOURCE_COV, USE_COMMON
     USE_COMMON = bool(args.common_drive)
@@ -163,7 +166,6 @@ def main() -> None:
     def full(u, uc):
         return upper_to_full(u), (upper_to_full(uc) if USE_COMMON else None)
 
-    splits = pd.read_csv(ROOT / "configs/m52_nested_splits.csv")
     emp = ROOT / args.emp_dir
     only = (set(Path(ROOT / args.subjects_file).read_text().split()) if args.subjects_file else None)
     fit = load_cross_spectral_collection(emp / "cross_spectra_fit.npz")
@@ -220,17 +222,13 @@ def main() -> None:
     top_store = {"subject_id": [], "loss": [], "csd_upper": []}
     t0 = time.time()
     done = 0
-    for fold in sorted(splits.outer_fold.unique()):
-        fr = splits[splits.outer_fold == fold]
-        train = np.asarray([index[s] for s in fr.loc[fr.outer_role == "training", "subject_id"].astype(str)])
-        test = [s for s in fr.loc[fr.outer_role == "validation", "subject_id"].astype(str)]
-        T = load_transformer_arrays(ROOT / f"outputs/m52_nested_baseline/outer_{fold}/spectral_transformer.npz")
+    for fold, T, null_csds, test in PL.plans(args, fit):
         screen_features = all_state_features(T)
         print(f"fold {fold}: screened {len(screen_features)} states {time.time()-t0:.0f}s", flush=True)
         # pooled null from training fit halves (blocks and weighted total)
-        blocks_train = [feature_blocks(jnp.asarray(fit.csd[i]), T) for i in train]
+        blocks_train = [feature_blocks(jnp.asarray(c), T) for c in null_csds]
         pooled_blocks = [np.mean([np.asarray(b[k]) for b in blocks_train], 0) for k in range(3)]
-        pooled_total = np.mean([np.asarray(weighted_features(jnp.asarray(fit.csd[i]), T)) for i in train], 0)
+        pooled_total = np.mean([np.asarray(weighted_features(jnp.asarray(c), T)) for c in null_csds], 0)
         for sid in test:
             if args.max_subjects and done >= args.max_subjects:
                 break
