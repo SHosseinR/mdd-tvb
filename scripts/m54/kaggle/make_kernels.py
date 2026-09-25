@@ -5,7 +5,11 @@ template = (root / "scripts/m54/kaggle/mddtvb_m54_template.py").read_text()
 kernels = {
     "mddtvb-m54-tvb": (["population:tvb", "dev:tvb", "ext:tvb", "devswap:tvb", "extswap:tvb", "devv1:tvb", "devnomask:tvb"], []),
     "mddtvb-m54-bem": (["population:bem", "dev:bem", "ext:bem", "m53v2:tvb", "devswap:bem"], []),
-    "mddtvb-m54-synth": (["synth:tvb"], ["shahmadi/mddtvb-m54-tvb"]),
+    "mddtvb-m54b-tvb": (["population:tvb:m10", "dev:tvb:m10pop", "dev:tvb:m10", "ext:tvb:m10pop", "ext:tvb:m10",
+                         "devswap:tvb:m10pop", "extswap:tvb:m10pop"], []),
+    "mddtvb-m54b-bem": (["population:bem:m10", "dev:bem:m10pop", "dev:bem:m10", "ext:bem:m10pop", "ext:bem:m10",
+                         "devswap:bem:m10pop"], []),
+    "mddtvb-m54-synth": (["synth:tvb:m10pop"], ["shahmadi/mddtvb-m54b-tvb"]),
 }
 only = sys.argv[1:] or list(kernels)
 for slug in only:

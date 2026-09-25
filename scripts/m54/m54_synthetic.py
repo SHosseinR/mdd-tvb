@@ -33,7 +33,7 @@ def wishart(rng, S, dof):
 def generate(args):
     fits = pd.read_csv(M.ROOT / args.fits).set_index("subject_id")
     population = json.loads((M.ROOT / args.population).read_text())
-    setup = M.make_setup(args.lead, population)
+    setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     names = setup.theta_names()
     rng = np.random.default_rng(args.seed)
     ids = sorted(rng.choice(fits.index.to_numpy(), size=min(args.n, len(fits)), replace=False))
@@ -48,7 +48,9 @@ def generate(args):
         with np.load(emp / "repair_matrices.npz") as payload:
             repair = dict(zip(payload["subject_ids"].astype(str), payload["repair"].astype(float)))
     R = np.eye(26) - 1.0 / 26
-    model = M.jax.jit(lambda th: M.model_csd(setup, th)[0])
+    dev_ids = set(pd.read_csv(M.ROOT / "configs/m52_nested_splits.csv").subject_id.astype(str))
+    B = jnp.asarray(M.pooled_null([fit.csd[i] for s_, i in index.items() if s_ in dev_ids]))
+    model = M.jax.jit(lambda th: M.model_csd(setup, th, B)[0])
     sel = [index[s] for s in ids]
     csd = {"fit": [], "validation": []}
     truth = []
@@ -109,6 +111,7 @@ def main():
     ap.add_argument("--seed", type=int, default=11)
     ap.add_argument("--out", default="outputs/m54/synthetic_tvb")
     ap.add_argument("--recovered", default="outputs/m54/synthetic_tvb_fit/subject_fits.csv")
+    ap.add_argument("--pop-background", action="store_true")
     args = ap.parse_args()
     generate(args) if args.mode == "generate" else summarise(args)
 

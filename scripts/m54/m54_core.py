@@ -74,21 +74,26 @@ class Setup:
     spatial: list
     freq: object
     u_population: np.ndarray  # (10,) unconstrained globals of the population fit
-    z_population: np.ndarray  # (d + 5,)
+    z_population: np.ndarray  # (d + len(nuisance),)
+    use_pop: bool = False     # empirical population CSD as an extra component (model nests the null)
 
     @property
     def d(self):
         return self.mapping.shape[1]
 
     @property
+    def nuisance(self):
+        return NUISANCE + (("pop_share",) if self.use_pop else ())
+
+    @property
     def n_theta(self):
-        return len(FREE_INDEX) + self.d + len(NUISANCE)
+        return len(FREE_INDEX) + self.d + len(self.nuisance)
 
     def theta_names(self):
-        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(NUISANCE)
+        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(self.nuisance)
 
 
-def make_setup(lead_name: str, population: dict | None = None) -> Setup:
+def make_setup(lead_name: str, population: dict | None = None, use_pop: bool = False) -> Setup:
     from mdd_tvb.spectral_config import load_spectral_m5_config
     from mdd_tvb.linear_spectral import CandidateLinearizer
 
@@ -111,8 +116,10 @@ def make_setup(lead_name: str, population: dict | None = None) -> Setup:
     else:
         u_pop = np.asarray(population["u"], float)
         z_pop = np.asarray(population["z"], float)
+    if use_pop and len(z_pop) == len(names) + len(NUISANCE):
+        z_pop = np.concatenate([z_pop, [-1.0]])  # start at ~26 % population-background power
     return Setup(static, lead, jnp.asarray(cov / np.mean(np.diag(cov))), jnp.asarray(mapping), names,
-                 jnp.asarray(freq), u_pop, z_pop)
+                 jnp.asarray(freq), u_pop, z_pop, use_pop)
 
 
 def full_u(setup: Setup, u_free):
@@ -120,8 +127,12 @@ def full_u(setup: Setup, u_free):
     return u.at[FREE_INDEX].set(u_free)
 
 
-def combine(setup: Setup, C, common, z):
-    """Unscaled sensor CSD from unit-gain group contributions (same algebra as M5.3)."""
+def combine(setup: Setup, C, common, z, B=None):
+    """Unscaled sensor CSD from unit-gain group contributions (same algebra as M5.3).
+
+    ``B`` (F, 26, 26): empirical population CSD of the training subjects, added
+    with share ``pop_share`` when ``setup.use_pop``.
+    """
     d = setup.d
     beta = setup.mapping @ (z[:d] - jnp.mean(z[:d]))
     frac = 0.95 * jax.nn.sigmoid(z[d])
@@ -141,6 +152,10 @@ def combine(setup: Setup, C, common, z):
     sshape = freq ** (-sexp)
     sshape = sshape / jnp.mean(sshape)
     out = out + (level * sfrac / (1.0 - sfrac) * sshape)[:, None, None] * setup.source_cov[None]
+    if setup.use_pop:
+        pshare = 0.95 * jax.nn.sigmoid(z[d + 5])
+        bdiag = jnp.mean(jnp.real(jnp.diagonal(B, axis1=1, axis2=2)))
+        out = out + B * (level / bdiag) * pshare / (1.0 - pshare)
     return out
 
 
@@ -152,10 +167,10 @@ def contributions(setup: Setup, u10):
     return C, common, p, psi
 
 
-def model_csd(setup: Setup, theta):
+def model_csd(setup: Setup, theta, B=None):
     k = len(FREE_INDEX)
     C, common, p, psi = contributions(setup, full_u(setup, theta[:k]))
-    return combine(setup, C, common, theta[k:]), p, psi
+    return combine(setup, C, common, theta[k:], B), p, psi
 
 
 def stability(setup: Setup, p, psi):
@@ -180,7 +195,7 @@ class Prior:
 def default_prior(setup: Setup) -> Prior:
     k = len(FREE_INDEX)
     mean = np.concatenate([setup.u_population[FREE_INDEX], setup.z_population])
-    sd = np.concatenate([np.full(k, 1.0), np.full(setup.d, 1.0), np.full(len(NUISANCE), 1.5)])
+    sd = np.concatenate([np.full(k, 1.0), np.full(setup.d, 1.0), np.full(len(setup.nuisance), 1.5)])
     return Prior(mean, sd)
 
 
@@ -249,3 +264,42 @@ def x64() -> bool:
 
 def save_json(path, obj):
     Path(path).write_text(json.dumps(obj, indent=1, default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o)))
+
+
+def mode_projection(D, A, pad, null_raw, freq, k_modes, split_hz=W.EMG_SPLIT_HZ):
+    """Restrict observed coordinates to the ``k_modes`` principal spatial modes of the null.
+
+    Per band (below / above the muscle split), the null CSD summed over the band's
+    frequencies is eigendecomposed in the subject's observed coordinates; D and A
+    are replaced by the projections onto the leading eigenvectors (padded to 25 rows).
+    Returns (D', A', pad', E) with E (F, 25, 25) such that C' = E C E^H (+ padding).
+    """
+    F = D.shape[0]
+    D2, A2, pad2, E = np.zeros_like(D), np.zeros_like(A), np.ones_like(pad), np.zeros((F, W.N_OBS, W.N_OBS))
+    Nc = np.einsum("fij,fjk,flk->fil", D, null_raw, D)
+    for band in (freq < split_hz, freq >= split_hz):
+        if not band.any():
+            continue
+        f0 = np.flatnonzero(band)[0]
+        r = int(np.sum(~pad[f0]))
+        M = np.real(Nc[band][:, :r, :r].sum(0))
+        w, V = np.linalg.eigh(M)
+        V = V[:, np.argsort(w)[::-1][:k_modes]]  # (r, K)
+        k = V.shape[1]
+        P = np.zeros((W.N_OBS, W.N_OBS))
+        P[:k, :r] = V.T
+        for f in np.flatnonzero(band):
+            D2[f] = P @ D[f]
+            A2[f] = P @ A[f]
+            pad2[f, :k] = False
+            E[f] = P
+    return D2, A2, pad2, E
+
+
+def project_modes(Cc, E, pad_old, pad_new):
+    """Project unit-power observed-coordinate data (identity-padded) onto the modes."""
+    C = Cc.copy()
+    C[:, np.arange(W.N_OBS), np.arange(W.N_OBS)] -= pad_old
+    C = np.einsum("fij,fjk,flk->fil", E, C, E)
+    C[:, np.arange(W.N_OBS), np.arange(W.N_OBS)] += pad_new
+    return C

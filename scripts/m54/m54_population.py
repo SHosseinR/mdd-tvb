@@ -38,6 +38,7 @@ def main() -> None:
     ap.add_argument("--start", default="configs/m53_frozen/population_fit_tvb.json")
     ap.add_argument("--maxiter", type=int, default=80)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes (0: all)")
     args = ap.parse_args()
     setup = M.make_setup(args.lead, None)
     u0, z0 = m53_start(M.ROOT / args.start, setup)
@@ -45,6 +46,13 @@ def main() -> None:
     if ids is None:
         ids = sorted(pd.read_csv(M.ROOT / "configs/m52_nested_splits.csv").subject_id.astype(str).unique())
     data = M.load_subjects(args.emp_dir, ids)
+    if args.modes:
+        null = M.pooled_null(list(data.raw_fit))
+        freq = np.asarray(setup.freq)
+        for n in range(len(data.ids)):
+            D2, A2, pad2, E = M.mode_projection(data.D[n], data.A[n], data.pad[n], null, freq, args.modes)
+            data.fit.Cc[n] = M.project_modes(data.fit.Cc[n], E, data.pad[n], pad2)
+            data.D[n], data.A[n], data.pad[n] = D2, A2, pad2
     A = jnp.asarray(data.A); pad = jnp.asarray(data.pad)
     Cc = jnp.asarray(data.fit.Cc); nu = jnp.asarray(data.fit.nu)
     dof = float(np.sum(data.fit.nu[:, None] * np.sum(~data.pad, axis=-1)))

@@ -66,11 +66,14 @@ def main() -> None:
     ap.add_argument("--no-emg-mask", action="store_true", help="score every channel at every frequency")
     ap.add_argument("--max-subjects", type=int, default=0)
     ap.add_argument("--max-residual", type=float, default=1e-4)
+    ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes of the null (0: all)")
+    ap.add_argument("--pop-background", action="store_true",
+                    help="add the empirical population CSD as a component with a fitted share (nests the null)")
     args = ap.parse_args()
     out = M.ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     population = json.loads((M.ROOT / args.population).read_text())
-    setup = M.make_setup(args.lead, population)
+    setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     prior = M.default_prior(setup)
     k = len(M.FREE_INDEX)
     d = setup.d
@@ -119,40 +122,41 @@ def main() -> None:
     z_prior_mean = jnp.asarray(prior.mean[k:])
     z_prior_sd = jnp.asarray(prior.sd[k:])
 
-    def screen_nll(u_c, u_cc, A, pad, Cc, nu):
-        S = M.combine(setup, upper_to_full(u_c), upper_to_full(u_cc), jnp.asarray(setup.z_population))
+    def screen_nll(u_c, u_cc, A, pad, Cc, nu, B):
+        S = M.combine(setup, upper_to_full(u_c), upper_to_full(u_cc), jnp.asarray(setup.z_population), B)
         return W.profiled_nll(S, A, pad, Cc, nu)[0]
 
-    screen = jax.jit(jax.vmap(screen_nll, in_axes=(0, 0, None, None, None, None)))
+    screen = jax.jit(jax.vmap(screen_nll, in_axes=(0, 0, None, None, None, None, None)))
 
-    def z_objective(z, C, cc, A, pad, Cc, nu):
-        S = M.combine(setup, C, cc, z)
+    def z_objective(z, C, cc, A, pad, Cc, nu, B):
+        S = M.combine(setup, C, cc, z, B)
         return W.profiled_nll(S, A, pad, Cc, nu)[0] + 0.5 * jnp.sum(((z - z_prior_mean) / z_prior_sd) ** 2)
 
-    def fit_z(u_c, u_cc, A, pad, Cc, nu):
+    def fit_z(u_c, u_cc, A, pad, Cc, nu, B):
         C, cc = upper_to_full(u_c), upper_to_full(u_cc)
-        return adam(lambda z: z_objective(z, C, cc, A, pad, Cc, nu), jnp.asarray(setup.z_population),
+        return adam(lambda z: z_objective(z, C, cc, A, pad, Cc, nu, B), jnp.asarray(setup.z_population),
                     args.bank_steps, 0.05)
 
-    fit_z_batch = jax.jit(jax.vmap(fit_z, in_axes=(0, 0, None, None, None, None)))
+    fit_z_batch = jax.jit(jax.vmap(fit_z, in_axes=(0, 0, None, None, None, None, None)))
 
     prior_mean, prior_sd = jnp.asarray(prior.mean), jnp.asarray(prior.sd)
 
-    def full_objective(theta, A, pad, Cc, nu):
-        S, p, psi = M.model_csd(setup, theta)
+    def full_objective(theta, A, pad, Cc, nu, B):
+        S, p, psi = M.model_csd(setup, theta, B)
         nll, logs = W.profiled_nll(S, A, pad, Cc, nu)
         pen, cert = M.stability(setup, p, psi)
         post = nll + 0.5 * jnp.sum(((theta - prior_mean) / prior_sd) ** 2)
         return post + pen, (post, nll, logs, cert)
 
     vg = jax.jit(jax.value_and_grad(full_objective, has_aux=True))
-    model_only = jax.jit(lambda theta: M.model_csd(setup, theta)[0])
+    model_only = jax.jit(lambda theta, B: M.model_csd(setup, theta, B)[0])
 
-    def observed(theta_ext, A, pad):
-        S = M.model_csd(setup, theta_ext[:-1])[0] * jnp.exp(theta_ext[-1])
+    def observed(theta_ext, A, pad, B):
+        S = M.model_csd(setup, theta_ext[:-1], B)[0] * jnp.exp(theta_ext[-1])
         return W.project_model(S, A, pad)
 
-    jac = jax.jit(jax.jacfwd(lambda t, A, pad: observed(t, A, pad), holomorphic=False))
+    jac = jax.jit(jax.jacfwd(lambda t, A, pad, B: observed(t, A, pad, B), holomorphic=False))
+    freq_np = np.asarray(setup.freq)
 
     rows, preds, covs = [], {}, {}
     t0 = time.time()
@@ -161,16 +165,24 @@ def main() -> None:
             break
         if sid not in null_of:
             continue
-        A = jnp.asarray(data.A[n]); pad = jnp.asarray(data.pad[n])
-        Cc = jnp.asarray(fit_half.Cc[n]); nu = float(fit_half.nu[n])
+        Dn, An, padn = data.D[n], data.A[n], data.pad[n]
+        Cfit_n, Cval_n = fit_half.Cc[n], val_half.Cc[n]
+        if args.modes:
+            Dn, An, pad_new, E = M.mode_projection(Dn, An, padn, null_of[sid], freq_np, args.modes)
+            Cfit_n = M.project_modes(Cfit_n, E, padn, pad_new)
+            Cval_n = M.project_modes(Cval_n, E, padn, pad_new)
+            padn = pad_new
+        B = jnp.asarray(null_of[sid])
+        A = jnp.asarray(An); pad = jnp.asarray(padn)
+        Cc = jnp.asarray(Cfit_n); nu = float(fit_half.nu[n])
         # 1. screen certified bank states at population spatial/nuisance values
         costs = []
         for s0 in range(0, len(states), 128):
-            costs.append(np.asarray(screen(contrib[s0:s0 + 128], common[s0:s0 + 128], A, pad, Cc, nu)))
+            costs.append(np.asarray(screen(contrib[s0:s0 + 128], common[s0:s0 + 128], A, pad, Cc, nu, B)))
         costs = np.concatenate(costs)
         top = np.argsort(np.where(np.isfinite(costs), costs, np.inf))[: args.top]
         # 2. spatial gains and nuisances on the best states
-        zs, zl = fit_z_batch(contrib[top], common[top], A, pad, Cc, nu)
+        zs, zl = fit_z_batch(contrib[top], common[top], A, pad, Cc, nu, B)
         zl = np.asarray(zl)
         b = int(np.nanargmin(zl))
         theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b]])
@@ -178,7 +190,7 @@ def main() -> None:
         m_ = jnp.zeros_like(theta); v_ = jnp.zeros_like(theta)
         best = (np.inf, theta, -1, None)
         for step in range(args.refine_steps + 1):
-            (tot, (post, nll, logs, cert)), g = vg(theta, A, pad, Cc, nu)
+            (tot, (post, nll, logs, cert)), g = vg(theta, A, pad, Cc, nu, B)
             if bool(cert) and np.isfinite(float(post)) and float(post) < best[0]:
                 best = (float(post), theta, step, float(logs))
             if step == args.refine_steps or not np.all(np.isfinite(np.asarray(g))):
@@ -188,14 +200,14 @@ def main() -> None:
             theta = theta - args.refine_lr * (m_ / (1 - 0.9 ** (step + 1))) / (jnp.sqrt(v_ / (1 - 0.999 ** (step + 1))) + 1e-8)
         if best[3] is None:  # no certified iterate: keep the bank solution
             theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b]])
-            (_, (post, nll, logs, cert)), _ = vg(theta, A, pad, Cc, nu)
+            (_, (post, nll, logs, cert)), _ = vg(theta, A, pad, Cc, nu, B)
             best = (float(post), theta, -1, float(logs))
         theta, logs = best[1], best[3]
-        (_, (post, nll, _, cert)), _ = vg(theta, A, pad, Cc, nu)
+        (_, (post, nll, _, cert)), _ = vg(theta, A, pad, Cc, nu, B)
         # 4. Laplace posterior: Fisher information of the Whittle likelihood + prior precision
         ext = jnp.concatenate([theta, jnp.asarray([logs])])
-        Sc = observed(ext, A, pad)
-        J = jac(ext, A, pad)  # (F, 25, 25, P)
+        Sc = observed(ext, A, pad, B)
+        J = jac(ext, A, pad, B)  # (F, 25, 25, P)
         Sinv = jnp.linalg.inv(Sc)
         X = jnp.einsum("fij,fjkp->fikp", Sinv, J)
         fisher = nu * jnp.real(jnp.einsum("fijp,fjiq->pq", X, X))
@@ -207,23 +219,22 @@ def main() -> None:
         except np.linalg.LinAlgError:
             cov = np.full_like(precision, np.nan)
         # 5. predictions (raw units) and scoring on the other half
-        S0 = np.asarray(model_only(theta), dtype=np.complex128)
+        S0 = np.asarray(model_only(theta, B), dtype=np.complex128)
         pred_raw = S0 * np.exp(logs) * fit_half.scale[n]
         preds[sid] = pred_raw.astype(np.complex64)
         covs[sid] = cov.astype(np.float32)
-        Dn, An, padn = data.D[n], data.A[n], data.pad[n]
         null_raw = null_of[sid]
         null_c = np.einsum("fij,fjk,flk->fil", Dn, null_raw, Dn)
         _, null_logs = W.profiled_nll(jnp.asarray(null_raw), jnp.asarray(Dn), pad, Cc, nu)
         ratio = fit_half.scale[n] / val_half.scale[n]
-        Cv = val_half.Cc[n]
+        Cv = Cval_n
         nu_v = float(val_half.nu[n])
-        dev_model = W.deviance(S0, logs + np.log(ratio), An, data.pad[n], Cv, nu_v)
-        dev_null = W.deviance(null_raw, float(null_logs) + np.log(ratio), Dn, data.pad[n], Cv, nu_v)
-        dev_persist = W.deviance(raw_fit[n] / val_half.scale[n], 0.0, Dn, data.pad[n], Cv, nu_v)
-        fit_dev_model = W.deviance(S0, logs, An, data.pad[n], np.asarray(Cc), nu)
-        fit_dev_null = W.deviance(null_raw, float(null_logs), Dn, data.pad[n], np.asarray(Cc), nu)
-        r_obs = float(np.sum(~data.pad[n]) )
+        dev_model = W.deviance(S0, logs + np.log(ratio), An, padn, Cv, nu_v)
+        dev_null = W.deviance(null_raw, float(null_logs) + np.log(ratio), Dn, padn, Cv, nu_v)
+        dev_persist = W.deviance(raw_fit[n] / val_half.scale[n], 0.0, Dn, padn, Cv, nu_v)
+        fit_dev_model = W.deviance(S0, logs, An, padn, np.asarray(Cc), nu)
+        fit_dev_null = W.deviance(null_raw, float(null_logs), Dn, padn, np.asarray(Cc), nu)
+        r_obs = float(np.sum(~padn))
         row = {"subject_id": sid, "group": data.groups[n], "outer_fold": fold_of[sid], "state": int(states[top[b]]),
                "refine_step": best[2], "certified": bool(cert), "nu_fit": nu, "nu_val": nu_v,
                "fit_nll_per_dof": float(nll) / (nu * r_obs), "log_scale": float(logs) + float(np.log(fit_half.scale[n])),
@@ -248,9 +259,9 @@ def main() -> None:
         for j, name in enumerate(setup.spatial):
             row[f"gain_{name}"] = float(beta[j])
             row[f"sd_gain_{name}"] = float(beta_sd[j])
-        for j, name in enumerate(M.NUISANCE):
+        for j, name in enumerate(setup.nuisance):
             scale_ = {"obs_fraction": 0.95, "obs_exponent": 2.5, "src_fraction": 0.95, "src_exponent": 3.0,
-                      "common_share": 0.95}[name]
+                      "common_share": 0.95, "pop_share": 0.95}[name]
             row[f"value_{name}"] = float(scale_ / (1 + np.exp(-z[d + j])))
         rows.append(row)
         if len(rows) % 10 == 0:
