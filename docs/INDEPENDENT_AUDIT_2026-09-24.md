@@ -4,6 +4,13 @@
 (`first-session.md`, 37 user turns) · **Status of this document:** findings final; results section filled from
 runs stored under `outputs/audit_claude/` and `outputs/linear_regime/`.
 
+> **Update 2026-09-25** (`docs/NEXT_STEPS_REPORT_2026-09-25.md`):
+> - **Confirmed:** the final model of §5.4 beat M5.1 on 164 untouched patients.
+> - **Revised:** the group-effect results of §5.2 and §5.6, including the "restored" lagged-connectivity effect and the
+>   left dorsal-attention difference, mostly reflect an acquisition-batch difference between the Healthy and the
+>   clinical recordings, not depression. Direct spectral metrics also show that the §5.4 fits did not predict
+>   individual spectra better than the population average; that report's M5.4 does.
+
 ---
 
 ## 0. Bottom line

@@ -90,6 +90,7 @@ def m4_params(path):
     t = pd.read_csv(ROOT / path).set_index("subject_id")
     cols = ["global_coupling", "mu", "a_scale", "b_scale", "vis_time_contrast", "dorsattn_time_contrast",
             "obs_fraction", "obs_exponent", "src_fraction", "src_exponent", "common_share"]
+    cols += [c for c in ("pop_share",) if c in t.columns]
     cols += [c for c in t.columns if c.startswith("gain_") and "Limbic" not in c]
     return t[cols]
 

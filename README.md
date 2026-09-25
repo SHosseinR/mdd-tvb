@@ -36,6 +36,18 @@ Jansen–Rit network (`src/mdd_tvb/linear_spectral.py`, `linear_jax.py`,
 regime and adds a shared delayed alpha drive that restores the lagged
 connectivity group effect.
 
+**Follow-up (2026-09-25):** see `docs/NEXT_STEPS_REPORT_2026-09-25.md`.
+- **External test:** the frozen audit model (`docs/M53_FROZEN_MODEL.md`) beat M5.1 on 164 untouched rTMS patients.
+- **Re-cleaned EEG** (`src/mdd_tvb/preprocess_v2.py`, TDBRAIN-authors pipeline) is more reliable.
+- **Direct spectral metrics** show that neither M5.1 nor M5.3 predicted spectra or spatial covariance better than
+  the population average.
+- **M5.4** (`scripts/m54/`) fits a complex-Wishart likelihood with the BEM lead field in 10 spatial modes plus a
+  population background. It beats the population average in development and externally, and its parameters are
+  identifiable, reliable and calibrated.
+- **rTMS response:** no EEG or model feature predicts it (pre-specified); only age and baseline severity do.
+- **Batch confound:** TDBRAIN's Healthy-vs-MDD contrast is confounded by acquisition batch. The "robust" parameter
+  difference and most Healthy–MDD EEG differences reproduce a batch effect estimated without depressed subjects.
+
 ## Scientific definition
 
 The supplied streamline-count matrix is transformed with `log1p`, then globally

@@ -35,6 +35,16 @@ def cohort_subjects(cohort: str) -> list[tuple[str, str]]:
         s = s[s.status == "saved"]
         return list(zip(s.subject_id.astype(str), s.group.astype(str)))
     T = pd.read_excel(TDBRAIN / "TDBRAIN_participants_V3.xlsx")
+    if cohort == "smc":  # subjective memory complaints: recorded in the same (early) era as the Healthy group
+        T = T[T["sessID"] == 1].drop_duplicates("TDBRAIN_ID")
+        ind = T["indication"].fillna("").astype(str).str.upper().str.strip()
+        keep = ind.eq("SMC")
+        return sorted(zip(T.loc[keep, "TDBRAIN_ID"].astype(str), ind[keep]))
+    if cohort == "controls":  # late-era, non-depressed clinical groups (adults), for specificity checks
+        T = T[T["sessID"] == 1].drop_duplicates("TDBRAIN_ID")
+        ind = T["indication"].fillna("").astype(str).str.upper().str.strip()
+        keep = ind.isin(["OCD", "INSOMNIA", "TINNITUS", "ADHD"]) & (T["age"] >= 18)
+        return sorted(zip(T.loc[keep, "TDBRAIN_ID"].astype(str), ind[keep]))
     r = T[(T["Dataset"] == "MDD-rTMS") & (T["sessID"] == 1)]
     return [(sid, "rTMS") for sid in sorted(r["TDBRAIN_ID"].astype(str).unique())]
 

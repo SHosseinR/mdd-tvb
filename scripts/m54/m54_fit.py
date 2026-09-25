@@ -52,7 +52,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lead", choices=["tvb", "bem"], default="tvb")
     ap.add_argument("--population", required=True)
-    ap.add_argument("--bank", nargs="+", required=True)
+    ap.add_argument("--bank", nargs="+", default=None)
     ap.add_argument("--emp-dir", required=True)
     ap.add_argument("--null-emp-dir", default=None, help="external mode: development collection for the null")
     ap.add_argument("--subjects-file", default=None)
@@ -69,6 +69,8 @@ def main() -> None:
     ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes of the null (0: all)")
     ap.add_argument("--pop-background", action="store_true",
                     help="add the empirical population CSD as a component with a fitted share (nests the null)")
+    ap.add_argument("--freeze-neural", action="store_true",
+                    help="ablation: neural globals and gains fixed at the population fit; only nuisance terms fitted")
     args = ap.parse_args()
     out = M.ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -107,7 +109,16 @@ def main() -> None:
                 null_of[s], fold_of[s] = null, int(fold)
 
     # --- bank ------------------------------------------------------------------
-    loaded = [np.load(M.ROOT / b) for b in args.bank]
+    if args.freeze_neural:  # the population state stands in for a one-state bank
+        C_pop, common_pop, _, _ = M.contributions(setup, jnp.asarray(setup.u_population))
+        iu = np.triu_indices(26)
+        args.bank = []
+        loaded = [{"contrib_upper": np.asarray(C_pop)[None][:, :, :, iu[0], iu[1]],
+                   "common_upper": np.asarray(common_pop)[None][:, :, iu[0], iu[1]],
+                   "unit": setup.u_population[None], "node_abscissa_per_s": np.asarray([-10.0]),
+                   "fixed_point_residual": np.asarray([0.0]), "small_gain": np.asarray([0.0]), "fold_margin": np.asarray([1.0])}]
+    else:
+        loaded = [np.load(M.ROOT / b) for b in args.bank]
     cat = lambda key: np.concatenate([b[key] for b in loaded])  # noqa: E731
     valid = ((cat("node_abscissa_per_s") < -1.0) & (cat("fixed_point_residual") < args.max_residual)
              & (cat("small_gain") < 1.0) & (cat("fold_margin") > 0.3))
@@ -132,10 +143,15 @@ def main() -> None:
         S = M.combine(setup, C, cc, z, B)
         return W.profiled_nll(S, A, pad, Cc, nu)[0] + 0.5 * jnp.sum(((z - z_prior_mean) / z_prior_sd) ** 2)
 
+    z_pop = jnp.asarray(setup.z_population)
+
     def fit_z(u_c, u_cc, A, pad, Cc, nu, B):
         C, cc = upper_to_full(u_c), upper_to_full(u_cc)
-        return adam(lambda z: z_objective(z, C, cc, A, pad, Cc, nu, B), jnp.asarray(setup.z_population),
-                    args.bank_steps, 0.05)
+        if args.freeze_neural:  # only the nuisance entries move
+            w, loss = adam(lambda w: z_objective(z_pop.at[d:].set(w), C, cc, A, pad, Cc, nu, B), z_pop[d:],
+                           args.bank_steps, 0.05)
+            return z_pop.at[d:].set(w), loss
+        return adam(lambda z: z_objective(z, C, cc, A, pad, Cc, nu, B), z_pop, args.bank_steps, 0.05)
 
     fit_z_batch = jax.jit(jax.vmap(fit_z, in_axes=(0, 0, None, None, None, None, None)))
 
@@ -189,7 +205,11 @@ def main() -> None:
         # 3. continuous refinement of all free parameters (best certified iterate kept)
         m_ = jnp.zeros_like(theta); v_ = jnp.zeros_like(theta)
         best = (np.inf, theta, -1, None)
-        for step in range(args.refine_steps + 1):
+        if args.freeze_neural:
+            S_frozen = M.combine(setup, upper_to_full(contrib[top[b]]), upper_to_full(common[top[b]]), zs[b], B)
+            nll_f, logs_f = W.profiled_nll(S_frozen, A, pad, Cc, nu)
+            best = (float(nll_f), theta, 0, float(logs_f))
+        for step in (range(0) if args.freeze_neural else range(args.refine_steps + 1)):
             (tot, (post, nll, logs, cert)), g = vg(theta, A, pad, Cc, nu, B)
             if bool(cert) and np.isfinite(float(post)) and float(post) < best[0]:
                 best = (float(post), theta, step, float(logs))
@@ -203,23 +223,32 @@ def main() -> None:
             (_, (post, nll, logs, cert)), _ = vg(theta, A, pad, Cc, nu, B)
             best = (float(post), theta, -1, float(logs))
         theta, logs = best[1], best[3]
-        (_, (post, nll, _, cert)), _ = vg(theta, A, pad, Cc, nu, B)
+        if args.freeze_neural:
+            post, nll, cert = best[0], best[0], True
+        else:
+            (_, (post, nll, _, cert)), _ = vg(theta, A, pad, Cc, nu, B)
         # 4. Laplace posterior: Fisher information of the Whittle likelihood + prior precision
         ext = jnp.concatenate([theta, jnp.asarray([logs])])
-        Sc = observed(ext, A, pad, B)
-        J = jac(ext, A, pad, B)  # (F, 25, 25, P)
-        Sinv = jnp.linalg.inv(Sc)
-        X = jnp.einsum("fij,fjkp->fikp", Sinv, J)
-        fisher = nu * jnp.real(jnp.einsum("fijp,fjiq->pq", X, X))
-        precision = np.array(fisher, dtype=float)
-        precision[:-1, :-1] += np.diag(1.0 / np.asarray(prior.sd) ** 2)
-        precision[-1, -1] += 1e-6
-        try:
-            cov = np.linalg.inv(precision)
-        except np.linalg.LinAlgError:
-            cov = np.full_like(precision, np.nan)
-        # 5. predictions (raw units) and scoring on the other half
-        S0 = np.asarray(model_only(theta, B), dtype=np.complex128)
+        if args.freeze_neural:
+            ext = None
+        if ext is None:
+            cov = np.full((len(theta) + 1, len(theta) + 1), np.nan)
+            S0 = np.asarray(S_frozen, dtype=np.complex128)
+        else:
+            Sc = observed(ext, A, pad, B)
+            J = jac(ext, A, pad, B)  # (F, 25, 25, P)
+            Sinv = jnp.linalg.inv(Sc)
+            X = jnp.einsum("fij,fjkp->fikp", Sinv, J)
+            fisher = nu * jnp.real(jnp.einsum("fijp,fjiq->pq", X, X))
+            precision = np.array(fisher, dtype=float)
+            precision[:-1, :-1] += np.diag(1.0 / np.asarray(prior.sd) ** 2)
+            precision[-1, -1] += 1e-6
+            try:
+                cov = np.linalg.inv(precision)
+            except np.linalg.LinAlgError:
+                cov = np.full_like(precision, np.nan)
+            # 5. predictions (raw units) and scoring on the other half
+            S0 = np.asarray(model_only(theta, B), dtype=np.complex128)
         pred_raw = S0 * np.exp(logs) * fit_half.scale[n]
         preds[sid] = pred_raw.astype(np.complex64)
         covs[sid] = cov.astype(np.float32)

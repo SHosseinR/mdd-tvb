@@ -133,6 +133,19 @@ for stage in STAGES:
         fit(f"dev_{lead}{vtag}_v1", lead, V1, DEV, variant)
     elif kind == "devnomask":  # muscle-channel masking switched off
         fit(f"dev_{lead}{vtag}_nomask", lead, f"{V2}/dev_restEC/empirical", DEV + ["--no-emg-mask"], variant)
+    elif kind == "ctrl":  # late-era non-depressed clinical groups, fitted like an external cohort
+        _, ptag, _ = VARIANTS[variant]
+        (work / R).mkdir(parents=True, exist_ok=True)
+        hits = [h for h in glob.glob(f"/kaggle/input/**/population_{lead}{ptag}.json", recursive=True) if "m54" in h]
+        if hits:  # reuse the exact population fit of the job that fitted the development subjects
+            shutil.copy2(hits[0], work / R / f"population_{lead}{ptag}.json")
+            bank(lead, ptag)
+        else:
+            population(lead, variant)
+        cohort = parts[3] if len(parts) > 3 else "controls"
+        fit(f"ctrl_{cohort}_{lead}{vtag}", lead, f"{V2}/{cohort}_restEC/empirical",
+            ["--subjects-file", f"{LISTS}/{cohort}_restEC_v2.txt", "--null-emp-dir", f"{V2}/dev_restEC/empirical",
+             "--dev-subjects-file", f"{LISTS}/dev_restEC_v2.txt"], variant)
     elif kind == "synth":  # synthetic recovery from a finished M5.4 job (attached as a kernel source)
         _, ptag, _ = VARIANTS[variant]
         (work / R).mkdir(parents=True, exist_ok=True)

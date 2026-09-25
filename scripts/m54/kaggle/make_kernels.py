@@ -9,7 +9,9 @@ kernels = {
                          "devswap:tvb:m10pop", "extswap:tvb:m10pop"], []),
     "mddtvb-m54b-bem": (["population:bem:m10", "dev:bem:m10pop", "dev:bem:m10", "ext:bem:m10pop", "ext:bem:m10",
                          "devswap:bem:m10pop"], []),
-    "mddtvb-m54-synth": (["synth:tvb:m10pop"], ["shahmadi/mddtvb-m54b-tvb"]),
+    "mddtvb-m54-synth": (["synth:bem:m10pop"], ["shahmadi/mddtvb-m54b-bem"]),
+    "mddtvb-m54-ctrl": (["ctrl:bem:m10pop"], ["shahmadi/mddtvb-m54b-bem"]),
+    "mddtvb-m54-smc": (["ctrl:bem:m10pop:smc"], ["shahmadi/mddtvb-m54b-bem"]),
 }
 only = sys.argv[1:] or list(kernels)
 for slug in only:
