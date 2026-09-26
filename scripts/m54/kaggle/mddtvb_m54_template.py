@@ -88,7 +88,11 @@ def run(name, args, x64="0"):
 
 # variant -> (fit options, population/bank tag, population options)
 VARIANTS = {"full": ([], "", []), "m10": (["--modes", "10"], "_m10", ["--modes", "10"]),
-            "m10pop": (["--modes", "10", "--pop-background"], "_m10", ["--modes", "10"])}
+            "m10pop": (["--modes", "10", "--pop-background"], "_m10", ["--modes", "10"]),
+            # fast (beta) generator free per subject; same population fit as m10, bank with 8 free globals
+            "m10popfast": (["--modes", "10", "--pop-background", "--free-fast"], "_m10fast", ["--modes", "10"])}
+POP_OF = {"_m10fast": "_m10"}  # bank tag -> population fit it reuses
+FIX_OF = {"_m10fast": ["--fix", "speed_mm_per_ms", "noise_tau_ms"]}
 
 
 def fit(name, lead, emp, extra, variant="full"):
@@ -107,8 +111,11 @@ def population(lead, variant):
 
 
 def bank(lead, ptag):
+    pop = f"{R}/population_{lead}{POP_OF.get(ptag, ptag)}.json"
+    if ptag in POP_OF and not (work / f"{R}/population_{lead}{ptag}.json").exists():
+        shutil.copy2(work / pop, work / f"{R}/population_{lead}{ptag}.json")
     run(f"bank_{lead}{ptag}", ["scripts/linear/build_analytic_bank.py", "--lead", lead, "--samples", "2000", "--half-width", "1.2",
-                               "--population", f"{R}/population_{lead}{ptag}.json", "--out", f"{R}/bank_{lead}{ptag}.npz"] + FIX)
+                               "--population", pop, "--out", f"{R}/bank_{lead}{ptag}.npz"] + FIX_OF.get(ptag, FIX))
 
 
 DEV = ["--subjects-file", f"{LISTS}/dev_restEC_v2.txt"]
@@ -133,6 +140,13 @@ for stage in STAGES:
         fit(f"dev_{lead}{vtag}_v1", lead, V1, DEV, variant)
     elif kind == "devnomask":  # muscle-channel masking switched off
         fit(f"dev_{lead}{vtag}_nomask", lead, f"{V2}/dev_restEC/empirical", DEV + ["--no-emg-mask"], variant)
+    elif kind == "reuse":  # copy a finished job's population fit, then build this variant's bank
+        _, ptag, _ = VARIANTS[variant]
+        base = POP_OF.get(ptag, ptag)
+        (work / R).mkdir(parents=True, exist_ok=True)
+        hits = [h for h in glob.glob(f"/kaggle/input/**/population_{lead}{base}.json", recursive=True) if "m54" in h]
+        shutil.copy2(hits[0], work / R / f"population_{lead}{base}.json")
+        bank(lead, ptag)
     elif kind == "ctrl":  # late-era non-depressed clinical groups, fitted like an external cohort
         _, ptag, _ = VARIANTS[variant]
         (work / R).mkdir(parents=True, exist_ok=True)
@@ -150,16 +164,21 @@ for stage in STAGES:
         _, ptag, _ = VARIANTS[variant]
         (work / R).mkdir(parents=True, exist_ok=True)
         for rel in (f"population_{lead}{ptag}.json", f"dev_{lead}{vtag}/subject_fits.csv"):
+            if (work / R / rel).exists():  # produced earlier in this job
+                continue
             hits = [h for h in glob.glob(f"/kaggle/input/**/{rel}", recursive=True) if "m54" in h]
             (work / R / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(hits[0], work / R / rel)
-        bank(lead, ptag)
+        if not (work / R / f"bank_{lead}{ptag}.npz").exists():
+            bank(lead, ptag)
         S = f"{R}/synthetic_{lead}{vtag}"
         gen = ["scripts/m54/m54_synthetic.py", "generate", "--lead", lead, "--fits", f"{R}/dev_{lead}{vtag}/subject_fits.csv",
                "--population", f"{R}/population_{lead}{ptag}.json", "--emp-dir", f"{V2}/dev_restEC/empirical",
                "--n", "120", "--out", S]
-        if variant == "m10pop":
+        if variant in ("m10pop", "m10popfast"):
             gen += ["--pop-background"]
+        if variant == "m10popfast":
+            gen += ["--free-fast"]
         run(f"synthetic_{lead}{vtag}_generate", gen, x64="1")
         if fit(f"synthetic_{lead}{vtag}_fit", lead, f"{S}/empirical", ["--subjects-file", f"{S}/subjects.txt"], variant):
             run(f"synthetic_{lead}{vtag}_summary", ["scripts/m54/m54_synthetic.py", "summarise", "--out", S,

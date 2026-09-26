@@ -69,12 +69,15 @@ def main() -> None:
     ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes of the null (0: all)")
     ap.add_argument("--pop-background", action="store_true",
                     help="add the empirical population CSD as a component with a fitted share (nests the null)")
+    ap.add_argument("--free-fast", action="store_true",
+                    help="fit the fast (beta) generator's time-scale ratio and power fraction per subject")
     ap.add_argument("--freeze-neural", action="store_true",
                     help="ablation: neural globals and gains fixed at the population fit; only nuisance terms fitted")
     args = ap.parse_args()
     out = M.ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     population = json.loads((M.ROOT / args.population).read_text())
+    M.configure(free_fast=args.free_fast)
     setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     prior = M.default_prior(setup)
     k = len(M.FREE_INDEX)

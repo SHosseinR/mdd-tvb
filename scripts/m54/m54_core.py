@@ -40,6 +40,16 @@ from mdd_tvb.spectral_features import load_cross_spectral_collection  # noqa: E4
 FIXED_GLOBALS = ("speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms")
 FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
 FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
+
+
+def configure(free_fast: bool = False) -> None:
+    """Choose the free globals; ``free_fast`` lets the fast (beta) generator's
+    time-scale ratio and power fraction vary per subject (call before make_setup)."""
+    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX
+    FIXED_GLOBALS = (("speed_mm_per_ms", "noise_tau_ms") if free_fast
+                     else ("speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms"))
+    FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
+    FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
 TIED = ("Cont", "Limbic")
 NUISANCE = ("obs_fraction", "obs_exponent", "src_fraction", "src_exponent", "common_share")
 COMMON_ORIGIN = (0.0, -15.0, 60.0)

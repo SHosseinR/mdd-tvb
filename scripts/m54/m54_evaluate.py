@@ -41,6 +41,10 @@ def features(csd, freq, labels):
     keep[np.ix_(freq >= EMG_SPLIT_HZ, emg)] = False
     spectrum = logp - logp[keep].mean()
     out = {"spectrum": spectrum[keep]}
+    # beta shape: 13-30 Hz log power on the non-muscle channels, centred within the band
+    nonemg = [i for i in range(len(labels)) if i not in emg]
+    beta = logp[np.ix_((freq >= 13) & (freq <= 30), nonemg)]
+    out["beta_shape"] = (beta - beta.mean()).ravel()
     iu = np.triu_indices(len(labels), 1)
     for band, (lo, hi) in BANDS.items():
         sel = (freq >= lo) & (freq <= hi)
