@@ -266,6 +266,34 @@ partially pooled model should, and it loses the lagged-alpha effect that M5.3's 
   something outside the certified box, so μ should not be interpreted.
 - Six of the 16 blocks are still at or above the null.
 
+### 5.4 What the fits look like
+
+Figures from `scripts/m54/make_fit_figures.py` (`docs/figures/fit_examples_2026-09-26/`, numbers in `numbers.json`). All
+comparisons use the unseen second halves. The example subjects are the development subjects at the 10th, 50th
+and 90th percentile of the M5.4 unseen deviance ratio.
+
+- **Average spectra** (`group_spectra.png`). M5.4 reproduces the mean measured spectrum in every channel group and
+  in both cohorts: log-shape r = 0.992–0.997, against 0.93–0.98 for M5.3. That includes the 15–22 Hz beta shoulder
+  and the fall-off above 25 Hz, which M5.1 and M5.3 overshoot.
+- **Individual spectra** (`subject_spectra.png`). Shapes are right for most subjects, but strong, narrow alpha peaks
+  come out too low. Median predicted / measured occipital peak height is 0.74 for M5.4 (32 % of subjects below
+  half), 0.69 for M5.3 (21 %) and 0.68 for M5.1. This limitation is shared by every version: a stable,
+  noise-driven linear model produces broader resonances than the sharpest measured alpha rhythms.
+- **Scalp maps** (`topomaps_alpha.png`, `topomaps_beta.png`). Group alpha map r = 0.95 (M5.4) vs 0.88 (M5.3); single
+  subjects 0.70–0.89 for both.
+- **Spatial coherence** (`coherence.png`). The dependence of zero-lag coherence on electrode distance, the signature of
+  volume conduction, is matched by M5.4. Alpha RMSE is 0.08, against 0.32 for M5.3 and 0.39 for M5.1. M5.1 and M5.3
+  predicted almost independent channels.
+- **EEG traces** (`eeg_traces.png`). Real EEG, the subject's M5.1 best candidate simulated with the JAX simulator,
+  and samples of the fitted M5.3 and M5.4 models (exact: the linear-regime model's EEG is a Gaussian process with the
+  predicted cross-spectrum; the sampler reproduces it, median power ratio 1.01). M5.1 generates a regular,
+  clock-like rhythm (audit F1); M5.3 and M5.4 generate irregular noise-driven EEG like the real recording.
+- **Decomposition** (`m54_decomposition.png`). The neural part carries the alpha peak. For the typical subject the
+  population background supplies 54 % of the power; for the better-fitted subject the neural part supplies 71 %.
+- **Group-difference maps** (`group_effect_maps.png`). The measured MDD − Healthy alpha map is reproduced by M5.4
+  (r = 0.87) and M5.3 (0.81). It is reproduced even better (r = 0.92) by the late − early acquisition-batch map
+  computed without any depressed subject (§7.1).
+
 ---
 
 ## 6. Identifiability, calibration and reliability of the parameters

@@ -1,0 +1,175 @@
+{
+ "example_subjects": {
+  "sub-87960125": {
+   "label": "better fit (10th percentile)",
+   "group": "Healthy",
+   "m54_unseen_deviance_ratio": 0.687479177581198
+  },
+  "sub-87974621": {
+   "label": "typical fit (median)",
+   "group": "Healthy",
+   "m54_unseen_deviance_ratio": 0.8402618253391202
+  },
+  "sub-88073433": {
+   "label": "harder fit (90th percentile)",
+   "group": "MDD",
+   "m54_unseen_deviance_ratio": 0.938613687756607
+  }
+ },
+ "occipital_alpha_peak": {
+  "v1|M5.1 (v1)": {
+   "peak_height_ratio_median": 0.6755750906635845,
+   "peak_height_ratio_iqr": [
+    0.4563754789302497,
+    1.1372432845609157
+   ],
+   "fraction_peak_below_half": 0.30916030534351147,
+   "peak_bin_error_hz_median": 1.0,
+   "n": 262
+  },
+  "v1|M5.3 (v1)": {
+   "peak_height_ratio_median": 0.736407074362462,
+   "peak_height_ratio_iqr": [
+    0.49827727493843743,
+    1.08020354473007
+   ],
+   "fraction_peak_below_half": 0.25190839694656486,
+   "peak_bin_error_hz_median": 1.0,
+   "n": 262
+  },
+  "v2|M5.3": {
+   "peak_height_ratio_median": 0.6931931433198915,
+   "peak_height_ratio_iqr": [
+    0.5342070933991497,
+    0.9973522447489592
+   ],
+   "fraction_peak_below_half": 0.21428571428571427,
+   "peak_bin_error_hz_median": 0.0,
+   "n": 252
+  },
+  "v2|M5.4": {
+   "peak_height_ratio_median": 0.7442257582252885,
+   "peak_height_ratio_iqr": [
+    0.4374246399339126,
+    1.3810641992811794
+   ],
+   "fraction_peak_below_half": 0.31746031746031744,
+   "peak_bin_error_hz_median": 1.0,
+   "n": 252
+  }
+ },
+ "group_effect_maps_r": {
+  "alpha 8\u201312 Hz|predicted by M5.3": 0.8056169821286927,
+  "alpha 8\u201312 Hz|predicted by M5.4": 0.8707456671546333,
+  "alpha 8\u201312 Hz|no depressed subjects": 0.9151037968502885,
+  "beta 13\u201319 Hz|predicted by M5.3": 0.7525125992817511,
+  "beta 13\u201319 Hz|predicted by M5.4": 0.8323849246992232,
+  "beta 13\u201319 Hz|no depressed subjects": 0.8285631168528715
+ },
+ "group_spectra_log_shape_r": {
+  "Original preprocessing, 262 development subjects | occipital (O1, Oz, O2) | M5.1 (v1)": 0.9708288776600523,
+  "Original preprocessing, 262 development subjects | occipital (O1, Oz, O2) | M5.3 (v1)": 0.9806408986903369,
+  "Original preprocessing, 262 development subjects | parietal (P3, Pz, P4) | M5.1 (v1)": 0.932083907333497,
+  "Original preprocessing, 262 development subjects | parietal (P3, Pz, P4) | M5.3 (v1)": 0.9402821788515691,
+  "Original preprocessing, 262 development subjects | frontal (F3, Fz, F4) | M5.1 (v1)": 0.9456183048257232,
+  "Original preprocessing, 262 development subjects | frontal (F3, Fz, F4) | M5.3 (v1)": 0.9477458053798534,
+  "Original preprocessing, 262 development subjects | temporal (T7, T8) | M5.1 (v1)": 0.9716044396719725,
+  "Original preprocessing, 262 development subjects | temporal (T7, T8) | M5.3 (v1)": 0.9827608741515423,
+  "Re-cleaned EEG, 252 development subjects | occipital (O1, Oz, O2) | M5.3": 0.9789240801372585,
+  "Re-cleaned EEG, 252 development subjects | occipital (O1, Oz, O2) | M5.4": 0.997134109674256,
+  "Re-cleaned EEG, 252 development subjects | parietal (P3, Pz, P4) | M5.3": 0.9330176687662547,
+  "Re-cleaned EEG, 252 development subjects | parietal (P3, Pz, P4) | M5.4": 0.9970538418500866,
+  "Re-cleaned EEG, 252 development subjects | frontal (F3, Fz, F4) | M5.3": 0.9366390280756914,
+  "Re-cleaned EEG, 252 development subjects | frontal (F3, Fz, F4) | M5.4": 0.9966394327089508,
+  "Re-cleaned EEG, 252 development subjects | temporal (T7, T8) | M5.3": 0.9755625744679716,
+  "Re-cleaned EEG, 252 development subjects | temporal (T7, T8) | M5.4": 0.9972092993571285,
+  "Re-cleaned EEG, 162 external rTMS patients | occipital (O1, Oz, O2) | M5.3 ext": 0.9796496184927489,
+  "Re-cleaned EEG, 162 external rTMS patients | occipital (O1, Oz, O2) | M5.4 ext": 0.996615246860242,
+  "Re-cleaned EEG, 162 external rTMS patients | parietal (P3, Pz, P4) | M5.3 ext": 0.9274813113940426,
+  "Re-cleaned EEG, 162 external rTMS patients | parietal (P3, Pz, P4) | M5.4 ext": 0.9959038258607602,
+  "Re-cleaned EEG, 162 external rTMS patients | frontal (F3, Fz, F4) | M5.3 ext": 0.9429312990506267,
+  "Re-cleaned EEG, 162 external rTMS patients | frontal (F3, Fz, F4) | M5.4 ext": 0.9949752015045715,
+  "Re-cleaned EEG, 162 external rTMS patients | temporal (T7, T8) | M5.3 ext": 0.9720450227845849,
+  "Re-cleaned EEG, 162 external rTMS patients | temporal (T7, T8) | M5.4 ext": 0.9919884424418454
+ },
+ "topomap_r_alpha": {
+  "M5.3|Group mean": 0.8808471848509347,
+  "M5.3|Better fit": 0.7143972796524468,
+  "M5.3|Typical fit": 0.8618109495868912,
+  "M5.3|Harder fit": 0.7751780992959721,
+  "M5.4|Group mean": 0.9500813808141964,
+  "M5.4|Better fit": 0.7024471512462989,
+  "M5.4|Typical fit": 0.8911037021670175,
+  "M5.4|Harder fit": 0.8092658189479722
+ },
+ "topomap_r_beta": {
+  "M5.3|Group mean": 0.9180794411477489,
+  "M5.3|Better fit": 0.7531855503815319,
+  "M5.3|Typical fit": 0.8699033356056277,
+  "M5.3|Harder fit": 0.5226635978666748,
+  "M5.4|Group mean": 0.9531075962770279,
+  "M5.4|Better fit": 0.8276082962963089,
+  "M5.4|Typical fit": 0.942734998857592,
+  "M5.4|Harder fit": 0.735992668500082
+ },
+ "coherence_vs_measured": {
+  "alpha 8\u201312 Hz|M5.1": {
+   "rmse_vs_measured": 0.3853827013460033,
+   "r_vs_measured": 0.8539763195125536
+  },
+  "alpha 8\u201312 Hz|M5.3": {
+   "rmse_vs_measured": 0.3221569807610665,
+   "r_vs_measured": 0.8754815381742169
+  },
+  "alpha 8\u201312 Hz|M5.4": {
+   "rmse_vs_measured": 0.07560198246011371,
+   "r_vs_measured": 0.9902800000349572
+  },
+  "beta 13\u201319 Hz|M5.1": {
+   "rmse_vs_measured": 0.3664620715467646,
+   "r_vs_measured": 0.867949287287491
+  },
+  "beta 13\u201319 Hz|M5.3": {
+   "rmse_vs_measured": 0.28940505982598674,
+   "r_vs_measured": 0.8358460936815599
+  },
+  "beta 13\u201319 Hz|M5.4": {
+   "rmse_vs_measured": 0.04264024711801366,
+   "r_vs_measured": 0.9949461628548384
+  }
+ },
+ "sampler_check_power_ratio": {
+  "median": 1.0124543488587983,
+  "p5": 0.8881637307322887,
+  "p95": 1.1403430519158209
+ },
+ "m51_trace_candidate": {
+  "subject": "sub-87974621",
+  "map_candidate_index": 132
+ },
+ "traces": {
+  "subject": "sub-87974621",
+  "real_rms_uv": 4.766809622944731,
+  "m54_rms_uv": 4.751894268723893,
+  "m53_rms_uv": 4.46792360540806,
+  "m51_rms_uv": 4.814380568685935
+ },
+ "m54_power_shares": {
+  "sub-87960125": {
+   "neural: network gains": 0.7012617769571646,
+   "neural: shared alpha drive": 0.013286266685142344,
+   "sensor noise": 0.0223563402073235,
+   "source background": 0.04780911632201893,
+   "population background": 0.21528649982835057,
+   "reconstruction_error": 6.362545462130364e-06
+  },
+  "sub-87974621": {
+   "neural: network gains": 0.29739137042381764,
+   "neural: shared alpha drive": 0.013212953644246891,
+   "sensor noise": 0.08838291554166706,
+   "source background": 0.0624013036493734,
+   "population background": 0.5386114567408951,
+   "reconstruction_error": 1.2559740875867298e-06
+  }
+ }
+}
