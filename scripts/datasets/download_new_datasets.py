@@ -38,6 +38,8 @@ def fetch(url, dest: Path, size: int | None, retries=5):
             with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as fh:
                 while chunk := r.read(1 << 20):
                     fh.write(chunk)
+            if size is not None and tmp.stat().st_size != size:  # connection closed early without an error
+                raise OSError(f"truncated: {tmp.stat().st_size} of {size} bytes")
             tmp.replace(dest)
             return dest.stat().st_size
         except Exception as error:  # noqa: BLE001

@@ -72,6 +72,8 @@ def main():
     ap.add_argument("--second", default="outputs/m54/dev_tvb_swap/subject_fits.csv")
     ap.add_argument("--out", default="outputs/m54/group_tvb")
     ap.add_argument("--min-kappa", type=float, default=1.0)
+    ap.add_argument("--qc", default=None, help="qc.csv with age/sex columns (other datasets); default TDBRAIN table")
+    ap.add_argument("--groups", nargs=2, default=["Healthy", "MDD"], help="reference group, case group")
     args = ap.parse_args()
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -87,14 +89,25 @@ def main():
             calib[c] = {"var_z": float(np.var(z)), "robust_var_z": float((1.4826 * np.median(np.abs(z - np.median(z)))) ** 2),
                         "icc_test_retest": float(icc31(t1.loc[common, c], t2.loc[common, c])),
                         "median_posterior_sd": float(t1.loc[common, s].median()), "n": int(len(z))}
-    T = pd.read_excel(TDBRAIN / "TDBRAIN_participants_V3.xlsx")
-    T = T[T.sessID == 1].drop_duplicates("TDBRAIN_ID").set_index("TDBRAIN_ID")
-    d = t1[t1.group.isin(["Healthy", "MDD"])].copy()
-    d["mdd"] = (d.group == "MDD").astype(float)
-    d["age"] = T.loc[d.index, "age"].astype(float).to_numpy()
-    d["sex"] = T.loc[d.index, "gender"].astype(float).to_numpy()
-    d = d.dropna(subset=["age", "sex"])
-    X = np.column_stack([np.ones(len(d)), d.mdd, (d.age - d.age.mean()) / d.age.std(), d.sex - d.sex.mean()])
+    ref, case = args.groups
+    d = t1[t1.group.isin([ref, case])].copy()
+    d["mdd"] = (d.group == case).astype(float)
+    if args.qc:
+        q = pd.read_csv(ROOT / args.qc).set_index("subject_id")
+        for c in ("age", "sex"):
+            d[c] = pd.to_numeric(q.loc[d.index, c], errors="coerce").to_numpy() if c in q.columns else np.nan
+    else:
+        T = pd.read_excel(TDBRAIN / "TDBRAIN_participants_V3.xlsx")
+        T = T[T.sessID == 1].drop_duplicates("TDBRAIN_ID").set_index("TDBRAIN_ID")
+        d["age"] = T.loc[d.index, "age"].astype(float).to_numpy()
+        d["sex"] = T.loc[d.index, "gender"].astype(float).to_numpy()
+    covariates = d[["age", "sex"]].notna().all().all()
+    if covariates:
+        d = d.dropna(subset=["age", "sex"])
+    if covariates:
+        X = np.column_stack([np.ones(len(d)), d.mdd, (d.age - d.age.mean()) / d.age.std(), d.sex - d.sex.mean()])
+    else:  # no demographics available: group only (age/sex columns left as NaN in the output)
+        X = np.column_stack([np.ones(len(d)), d.mdd])
     rows = []
     for c, s in cols:
         kappa = max(args.min_kappa, calib.get(c, {}).get("robust_var_z", 1.0))
@@ -106,7 +119,8 @@ def main():
         zval = beta[1] / se[1]
         rows.append({"parameter": c, "kappa": kappa, "tau": np.sqrt(tau2), "mdd_minus_healthy": beta[1],
                      "effect_sd_units": beta[1] / sd_between, "se": se[1], "z": zval,
-                     "p": 2 * norm.sf(abs(zval)), "age_effect_per_sd": beta[2], "age_p": 2 * norm.sf(abs(beta[2] / se[2])),
+                     "p": 2 * norm.sf(abs(zval)), "age_effect_per_sd": beta[2] if len(beta) > 2 else np.nan,
+                     "age_p": 2 * norm.sf(abs(beta[2] / se[2])) if len(beta) > 2 else np.nan,
                      "icc": calib.get(c, {}).get("icc_test_retest", np.nan)})
     res = pd.DataFrame(rows)
     res["p_holm"] = holm(res.p.to_numpy())

@@ -85,8 +85,11 @@ def read_ds003478(participant_id: str, run: int = 1):
     labels = [c for c in EEG_LABELS if c.upper() in upper]
     x = raw.get_data(picks=[upper[c.upper()] for c in labels]) * 1e6
     eog = raw.get_data(picks=[upper["VEOG"], upper["HEOG"]]) * 1e6 if {"VEOG", "HEOG"} <= set(upper) else None
-    ev = pd.read_csv(str(base) + "_events.tsv", sep="\t")
-    closed = ev[ev.trial_type.astype(str).str.contains("Eyes Closed", case=False)].onset.to_numpy(float)
+    ev = pd.read_csv(str(base).removesuffix("_eeg") + "_events.tsv", sep="\t")
+    # Event values: odd 1/3/5 (every 500 ms) and 11/13/15 (every 2 s) = eyes closed, even = eyes open,
+    # 17 = start/finish.  33 older files carry only these numbers (trial_type "STATUS").
+    code = pd.to_numeric(ev["value"], errors="coerce")
+    closed = ev[code.isin([1, 3, 5, 11, 13, 15])].onset.to_numpy(float)
     valid = np.zeros(raw.n_times, bool)
     if len(closed):
         blocks = np.split(closed, np.flatnonzero(np.diff(closed) > 5.0) + 1)

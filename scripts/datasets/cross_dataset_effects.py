@@ -72,8 +72,9 @@ def main():
         F = feats_of(f"outputs/preproc_v2/{ds}_restEC/empirical", ids, present)
         g = qc.loc[ids, "group"].to_numpy()
         cov = None
-        if {"age", "sex"} <= set(qc.columns) and qc.loc[ids, ["age", "sex"]].notna().all().all():
-            cov = qc.loc[ids, ["age", "sex"]].to_numpy(float)
+        if {"age", "sex"} <= set(qc.columns) and qc.loc[ids, ["age", "sex"]].notna().mean().min() > 0.9:
+            c = qc.loc[ids, ["age", "sex"]].astype(float)
+            cov = c.fillna(c.mean()).to_numpy()  # impute the few missing values
         # TDBRAIN reference effects on the same channels
         dev_ids = Path(ROOT / "configs/m54_lists/dev_restEC_v2.txt").read_text().split()
         Ft = feats_of("outputs/preproc_v2/dev_restEC/empirical", dev_ids, present)
