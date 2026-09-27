@@ -27,11 +27,18 @@ EMG_SPLIT_HZ = 20.0
 N_OBS = 25
 
 
-def _operators(labels, keep, repair):
-    """Data-side D and model-side A (N_OBS x 26) plus padding mask for one channel set."""
+def _operators(labels, keep, repair, missing=()):
+    """Data-side D and model-side A (N_OBS x 26) plus padding mask for one channel set.
+
+    ``missing``: channels the recording does not have; the data were average-
+    referenced over the recorded channels only, and missing channels are never kept.
+    """
     n = len(labels)
-    R = np.eye(n) - 1.0 / n
+    avail = [i for i, c in enumerate(labels) if c not in set(missing)]
+    R = np.zeros((n, n))
+    R[np.ix_(avail, avail)] = np.eye(len(avail)) - 1.0 / len(avail)
     P = np.eye(n) if repair is None else np.asarray(repair, float)
+    keep = [c for c in keep if c not in set(missing)]
     rows = [labels.index(c) for c in keep]
     E = np.eye(n)[rows]
     M = E @ R @ P  # measured channels as functionals of the pre-reference potentials
@@ -48,12 +55,12 @@ def _operators(labels, keep, repair):
 
 
 def observation_operators(labels, frequency_hz, emg_channels=(), repair=None,
-                          fixed_emg=FIXED_EMG_CHANNELS, split_hz=EMG_SPLIT_HZ):
+                          fixed_emg=FIXED_EMG_CHANNELS, split_hz=EMG_SPLIT_HZ, missing=()):
     """Per-frequency (F, 25, 26) data/model operators and (F, 25) padding masks."""
     labels = list(labels)
-    low = _operators(labels, labels, repair)
+    low = _operators(labels, labels, repair, missing)
     excluded = set(fixed_emg) | set(emg_channels)
-    high = _operators(labels, [c for c in labels if c not in excluded], repair)
+    high = _operators(labels, [c for c in labels if c not in excluded], repair, missing)
     hi = np.asarray(frequency_hz) >= split_hz
     D = np.where(hi[:, None, None], high[0][None], low[0][None])
     A = np.where(hi[:, None, None], high[1][None], low[1][None])

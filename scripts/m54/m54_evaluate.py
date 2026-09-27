@@ -37,7 +37,7 @@ def features(csd, freq, labels):
     power = np.maximum(np.real(np.einsum("fii->fi", csd)), 1e-30)
     logp = np.log(power)
     keep = np.ones_like(logp, bool)
-    emg = [labels.index(c) for c in FIXED_EMG_CHANNELS]
+    emg = [labels.index(c) for c in FIXED_EMG_CHANNELS if c in labels]
     keep[np.ix_(freq >= EMG_SPLIT_HZ, emg)] = False
     spectrum = logp - logp[keep].mean()
     out = {"spectrum": spectrum[keep]}
@@ -55,7 +55,7 @@ def features(csd, freq, labels):
         coh = (c / d)[iu]
         out[f"zerolag_{band}"] = np.real(coh)
         out[f"lagged_{band}"] = np.imag(coh) / np.sqrt(np.maximum(1 - np.real(coh) ** 2, 1e-8))
-    post = power[:, [labels.index(c) for c in POSTERIOR]].mean(1)
+    post = power[:, [labels.index(c) for c in POSTERIOR if c in labels]].mean(1)
     sel = np.flatnonzero((freq >= 7) & (freq <= 13))
     j = sel[np.argmax(post[sel])]
     if 0 < j < len(freq) - 1:
@@ -75,21 +75,28 @@ def paired_ci(a, b, n=2000, seed=0):
     return float(np.median(diff)), float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))
 
 
-def evaluate(run_dir, emp_dir, null_emp_dir=None, subjects=None, label=None):
+def evaluate(run_dir, emp_dir, null_emp_dir=None, subjects=None, label=None,
+             splits_file="configs/m52_nested_splits.csv", groups=("Healthy", "MDD")):
     emp = ROOT / emp_dir
     fit = load_cross_spectral_collection(emp / "cross_spectra_fit.npz")
     val = load_cross_spectral_collection(emp / "cross_spectra_validation.npz")
     labels = list(fit.channel_names.astype(str))
     freq = np.asarray(fit.frequency_hz, float)
+    present = np.flatnonzero(np.real(np.einsum("nfii->ni", fit.csd[:5])).min(0) > 0)
+    if len(present) < len(labels):  # e.g. a 19-channel dataset stored in the 26-channel layout
+        sub = lambda c: np.asarray(c)[:, present][:, :, present]  # noqa: E731
+        labels = [labels[i] for i in present]
+    else:
+        sub = lambda c: c  # noqa: E731
     index = {s: i for i, s in enumerate(fit.subject_ids.astype(str))}
     with np.load(ROOT / run_dir / "predictions.npz") as payload:
         pred = dict(zip(payload["subject_ids"].astype(str), payload["csd"]))
     ids = [s for s in pred if s in index and (subjects is None or s in subjects)]
-    feats = lambda c: features(np.asarray(c, np.complex128), freq, labels)  # noqa: E731
+    feats = lambda c: features(sub(np.asarray(c, np.complex128)), freq, labels)  # noqa: E731
     val_f = {s: feats(val.csd[index[s]]) for s in ids}
     pred_f = {s: feats(pred[s]) for s in ids}
     # null features: mean of training subjects' first-half features (nested) or development mean
-    splits = pd.read_csv(ROOT / "configs/m52_nested_splits.csv")
+    splits = pd.read_csv(ROOT / splits_file)
     if null_emp_dir:
         dev = load_cross_spectral_collection(ROOT / null_emp_dir / "cross_spectra_fit.npz")
         dev_ids = set(splits.subject_id.astype(str))
@@ -118,13 +125,15 @@ def evaluate(run_dir, emp_dir, null_emp_dir=None, subjects=None, label=None):
                 row["iaf_null_abs_error_hz"] = float(np.sqrt(e_null))
         rows.append(row)
     table = pd.DataFrame(rows)
+    group_pair = groups
     groups = table.group.to_numpy()
     effects = {}
-    if {"Healthy", "MDD"} <= set(groups):
+    ref, case = group_pair
+    if {ref, case} <= set(groups):
         for k in val_f[ids[0]]:
             V = np.stack([val_f[s][k] for s in ids]); P = np.stack([pred_f[s][k] for s in ids])
-            ev = V[groups == "MDD"].mean(0) - V[groups == "Healthy"].mean(0)
-            ep = P[groups == "MDD"].mean(0) - P[groups == "Healthy"].mean(0)
+            ev = V[groups == case].mean(0) - V[groups == ref].mean(0)
+            ep = P[groups == case].mean(0) - P[groups == ref].mean(0)
             if ev.size > 1:
                 effects[k] = {"r": float(np.corrcoef(ev, ep)[0, 1]), "norm_ratio": float(np.linalg.norm(ep) / np.linalg.norm(ev))}
             else:
@@ -144,6 +153,8 @@ def main() -> None:
     ap.add_argument("--null-emp-dir", default=None)
     ap.add_argument("--out", required=True)
     ap.add_argument("--subjects-file", default=None)
+    ap.add_argument("--splits", default="configs/m52_nested_splits.csv")
+    ap.add_argument("--groups", nargs=2, default=["Healthy", "MDD"], help="reference group, case group")
     args = ap.parse_args()
     subjects = set(Path(ROOT / args.subjects_file).read_text().split()) if args.subjects_file else None
     out = ROOT / args.out
@@ -151,7 +162,7 @@ def main() -> None:
     tables, summaries = {}, []
     for spec in args.runs:
         label, run = spec.split("=", 1)
-        t, s = evaluate(run, args.emp_dir, args.null_emp_dir, subjects, label)
+        t, s = evaluate(run, args.emp_dir, args.null_emp_dir, subjects, label, args.splits, tuple(args.groups))
         t.to_csv(out / f"blocks_{label}.csv", index=False)
         tables[label] = t.set_index("subject_id")
         summaries.append(s)

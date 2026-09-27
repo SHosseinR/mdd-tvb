@@ -69,6 +69,10 @@ def main() -> None:
     ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes of the null (0: all)")
     ap.add_argument("--pop-background", action="store_true",
                     help="add the empirical population CSD as a component with a fitted share (nests the null)")
+    ap.add_argument("--splits", default="configs/m52_nested_splits.csv",
+                    help="outer-fold split file (nested mode) / development subjects (external mode)")
+    ap.add_argument("--somot-beta", action="store_true",
+                    help="somatomotor-specific fast (beta) generator ratio and fraction, fitted in the refinement")
     ap.add_argument("--free-fast", action="store_true",
                     help="fit the fast (beta) generator's time-scale ratio and power fraction per subject")
     ap.add_argument("--freeze-neural", action="store_true",
@@ -77,7 +81,7 @@ def main() -> None:
     out = M.ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     population = json.loads((M.ROOT / args.population).read_text())
-    M.configure(free_fast=args.free_fast)
+    M.configure(free_fast=args.free_fast, somot_beta=args.somot_beta)
     setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     prior = M.default_prior(setup)
     k = len(M.FREE_INDEX)
@@ -92,7 +96,7 @@ def main() -> None:
     print(f"subjects {len(data.ids)}", flush=True)
 
     # --- null(s) ---------------------------------------------------------------
-    splits = pd.read_csv(M.ROOT / "configs/m52_nested_splits.csv")
+    splits = pd.read_csv(M.ROOT / args.splits)
     if args.null_emp_dir:
         dev = M.load_subjects(args.null_emp_dir, None, use_emg_flags=False)
         dev_ids = set(splits.subject_id.astype(str))
@@ -133,8 +137,9 @@ def main() -> None:
                        - setup.u_population[[LJ.GLOBAL_NAMES.index(n) for n in M.FIXED_GLOBALS]]).max()
     print(f"bank states {len(valid)}, certified {len(states)}, max fixed-dim deviation {fixed_dev:.2e}", flush=True)
 
-    z_prior_mean = jnp.asarray(prior.mean[k:])
-    z_prior_sd = jnp.asarray(prior.sd[k:])
+    nz = len(setup.z_population)
+    z_prior_mean = jnp.asarray(prior.mean[k:k + nz])
+    z_prior_sd = jnp.asarray(prior.sd[k:k + nz])
 
     def screen_nll(u_c, u_cc, A, pad, Cc, nu, B):
         S = M.combine(setup, upper_to_full(u_c), upper_to_full(u_cc), jnp.asarray(setup.z_population), B)
@@ -204,7 +209,7 @@ def main() -> None:
         zs, zl = fit_z_batch(contrib[top], common[top], A, pad, Cc, nu, B)
         zl = np.asarray(zl)
         b = int(np.nanargmin(zl))
-        theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b]])
+        theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b], jnp.asarray(M.extra_init(setup))])
         # 3. continuous refinement of all free parameters (best certified iterate kept)
         m_ = jnp.zeros_like(theta); v_ = jnp.zeros_like(theta)
         best = (np.inf, theta, -1, None)
@@ -222,7 +227,7 @@ def main() -> None:
             v_ = 0.999 * v_ + 0.001 * g * g
             theta = theta - args.refine_lr * (m_ / (1 - 0.9 ** (step + 1))) / (jnp.sqrt(v_ / (1 - 0.999 ** (step + 1))) + 1e-8)
         if best[3] is None:  # no certified iterate: keep the bank solution
-            theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b]])
+            theta = jnp.concatenate([jnp.asarray(units[top[b]][M.FREE_INDEX]), zs[b], jnp.asarray(M.extra_init(setup))])
             (_, (post, nll, logs, cert)), _ = vg(theta, A, pad, Cc, nu, B)
             best = (float(post), theta, -1, float(logs))
         theta, logs = best[1], best[3]

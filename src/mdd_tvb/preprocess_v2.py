@@ -81,6 +81,7 @@ class PreprocessResult:
     qc_ok: bool
     qc_reason: str
     stats: dict = field(default_factory=dict)
+    labels: list = field(default_factory=lambda: list(EEG_LABELS))  # rows of data_uv (canonical order)
 
 
 def _butter_filtfilt(x, fs, cutoff, btype):
@@ -184,6 +185,8 @@ def bridged_pairs(x, labels, relative_threshold=0.02, min_correlation=0.99):
     ed = {}
     for a, na in enumerate(labels):
         for nb in NEIGHBOURS[na]:
+            if nb not in labels:
+                continue
             b = labels.index(nb)
             if b <= a:
                 continue
@@ -203,10 +206,11 @@ def repair_matrix(labels, bad):
     P = np.eye(len(labels))
     for ch in bad:
         i = labels.index(ch)
-        good = [labels.index(n) for n in NEIGHBOURS[ch] if n not in bad]
+        good = [labels.index(n) for n in NEIGHBOURS[ch] if n in labels and n not in bad]
         if len(good) < 2:
             return None
-        d = np.linalg.norm(COORDS_MM[good] - COORDS_MM[i], axis=1)
+        xyz = COORDS_MM[[EEG_LABELS.index(labels[g]) for g in good]]
+        d = np.linalg.norm(xyz - COORDS_MM[EEG_LABELS.index(ch)], axis=1)
         w = d.sum() - d
         P[i] = 0.0
         P[i, good] = w / w.sum()
@@ -214,6 +218,7 @@ def repair_matrix(labels, bad):
 
 
 def preprocess_bdf(path: str | Path, max_duration_s: float = 120.0) -> PreprocessResult:
+    """TDBRAIN BDF recording (26 EEG + 4 EOG channels, 50 Hz mains)."""
     import mne
 
     raw = mne.io.read_raw_bdf(str(path), preload=True, verbose="ERROR")
@@ -225,15 +230,35 @@ def preprocess_bdf(path: str | Path, max_duration_s: float = 120.0) -> Preproces
     n = min(raw.n_times, int(round(max_duration_s * fs)))
     x = raw.get_data(picks=labels, stop=n) * 1e6
     e = raw.get_data(picks=list(EOG_LABELS), stop=n) * 1e6
-    eog = np.stack([e[0] - e[1], e[2] - e[3]])
-    x = x - x.mean(axis=1, keepdims=True)
-    eog = eog - eog.mean(axis=1, keepdims=True)
-    # filters: notch, high-pass, low-pass (zero phase)
-    b, a = iirnotch(50.0, 100.0, fs=fs)
-    x, eog = filtfilt(b, a, x, axis=-1), filtfilt(b, a, eog, axis=-1)
-    x = _butter_filtfilt(_butter_filtfilt(x, fs, 0.5, "highpass"), fs, 100.0, "lowpass")
-    eog = _butter_filtfilt(_butter_filtfilt(eog, fs, 0.5, "highpass"), fs, 100.0, "lowpass")
-    x, coef = correct_eog(x, eog, fs)
+    return preprocess_array(x, np.stack([e[0] - e[1], e[2] - e[3]]), fs, labels, line_hz=50.0)
+
+
+def preprocess_array(x, eog, fs: float, labels, line_hz: float = 50.0, valid=None) -> PreprocessResult:
+    """Artefact-aware cleaning of any recording mapped onto (a subset of) the 26 TDBRAIN channels.
+
+    x: (channels, samples) in microvolt, rows in the order of ``labels`` (a subset of
+    EEG_LABELS in canonical order); eog: (2, samples) VEOG/HEOG in microvolt, or None
+    (no ocular regression); valid: optional (samples,) mask of usable time (e.g. the
+    eyes-closed blocks of an alternating recording); artefact statistics and the clean
+    mask use only valid time.
+    """
+    labels = list(labels)
+    if [c for c in EEG_LABELS if c in labels] != labels:
+        raise ValueError("labels must be a subset of EEG_LABELS in canonical order")
+    x = np.asarray(x, float)
+    n = x.shape[1]
+    valid = np.ones(n, bool) if valid is None else np.asarray(valid, bool)
+    x = x - x[:, valid].mean(axis=1, keepdims=True)
+    lp = min(100.0, 0.45 * fs)
+    b, a = iirnotch(line_hz, 100.0, fs=fs)
+    x = _butter_filtfilt(_butter_filtfilt(filtfilt(b, a, x, axis=-1), fs, 0.5, "highpass"), fs, lp, "lowpass")
+    if eog is not None:
+        eog = np.asarray(eog, float)
+        eog = eog - eog[:, valid].mean(axis=1, keepdims=True)
+        eog = _butter_filtfilt(_butter_filtfilt(filtfilt(b, a, eog, axis=-1), fs, 0.5, "highpass"), fs, lp, "lowpass")
+        x, coef = correct_eog(x, eog, fs)
+    else:
+        coef = np.zeros((len(labels), 2))
 
     masks = {
         "emg": detect_emg(x, fs),
@@ -245,21 +270,23 @@ def preprocess_bdf(path: str | Path, max_duration_s: float = 120.0) -> Preproces
     art = np.zeros_like(x, dtype=bool)
     for m in masks.values():
         art |= m
-    frac = art.mean(axis=1)
+    frac = art[:, valid].mean(axis=1)
     bad = {labels[i] for i in np.flatnonzero(frac > 1.0 / 3.0)}
-    # broadband (55-95 Hz) outlier channels: tonic muscle activity or a noisy electrode
-    spec = np.abs(np.fft.rfft(x * hann(n, sym=False)[None], axis=1)) ** 2
-    f = np.fft.rfftfreq(n, 1.0 / fs)
-    hf = np.log(spec[:, (f > 55) & (f < 95)].mean(axis=1))
+    # broadband (55-95 Hz, or up to 0.45 fs) outlier channels: tonic muscle activity or a noisy electrode
+    xv = x[:, valid]
+    nv = xv.shape[1]
+    spec = np.abs(np.fft.rfft(xv * hann(nv, sym=False)[None], axis=1)) ** 2
+    f = np.fft.rfftfreq(nv, 1.0 / fs)
+    hf = np.log(spec[:, (f > 55) & (f < min(95.0, lp))].mean(axis=1))
     mad = 1.4826 * np.median(np.abs(hf - np.median(hf)))
     robust_z = (hf - np.median(hf)) / max(mad, 1e-12)
     # Tonic-muscle channels are kept (repairing Fp1/Fp2/F7/F8 from each other is not
     # meaningful); they are reported so that their high frequencies can be excluded.
     emg_channels = [labels[i] for i in np.flatnonzero(robust_z > 3.5)]
-    bridges = bridged_pairs(x, labels)
-    for p in bridges:
-        bad |= set(p)
-    flat = [labels[i] for i in np.flatnonzero(x.std(axis=1) < 0.5)]
+    bridges = bridged_pairs(xv, labels)
+    for pair in bridges:
+        bad |= set(pair)
+    flat = [labels[i] for i in np.flatnonzero(xv.std(axis=1) < 0.5)]
     bad |= set(flat)
     bad_list = [c for c in labels if c in bad]
     P = repair_matrix(labels, bad_list) if bad_list else np.eye(len(labels))
@@ -273,26 +300,28 @@ def preprocess_bdf(path: str | Path, max_duration_s: float = 120.0) -> Preproces
     # flagged muscle state, whose high frequencies are not scored downstream.
     tonic = [labels.index(c) for c in emg_channels]
     art[tonic] = masks["kurtosis"][tonic] | masks["swing"][tonic] | masks["blink"][tonic]
-    clean = ~art[good_rows].any(axis=0)
+    clean = ~art[good_rows].any(axis=0) & valid
     if len(bad_list) > 3:
         qc_ok, reason = False, f"{len(bad_list)} channels need repair"
-    elif clean.mean() < 1.0 / 3.0:
-        qc_ok, reason = False, f"only {clean.mean():.0%} artefact-free"
-    x = x - x.mean(axis=0, keepdims=True)  # average reference
+    elif clean.sum() < valid.sum() / 3.0:
+        qc_ok, reason = False, f"only {clean.sum() / valid.sum():.0%} artefact-free"
+    x = x - x.mean(axis=0, keepdims=True)  # average reference over the recorded channels
     # 20-40 Hz log-log slope per channel (muscle signature) for QC
     sel = (f >= 20) & (f <= 40)
-    spec_ref = np.abs(np.fft.rfft(x * hann(n, sym=False)[None], axis=1)) ** 2
+    xv = x[:, valid]
+    spec_ref = np.abs(np.fft.rfft(xv * hann(nv, sym=False)[None], axis=1)) ** 2
     slope = np.polyfit(np.log(f[sel]), np.log(spec_ref[:, sel].T + 1e-30), 1)[0]
     stats = {
         "duration_s": n / fs,
-        "clean_fraction": float(clean.mean()),
-        **{f"{k}_fraction": float(m[good_rows].any(axis=0).mean()) for k, m in masks.items()},
+        "valid_s": float(valid.sum() / fs),
+        "clean_fraction": float(clean.sum() / valid.sum()),
+        **{f"{k}_fraction": float(m[good_rows][:, valid].any(axis=0).mean()) for k, m in masks.items()},
         "slope_20_40": dict(zip(labels, np.round(slope, 3).tolist())),
         "hf_robust_z": dict(zip(labels, np.round(robust_z, 2).tolist())),
         "flat_channels": flat,
     }
     return PreprocessResult(x.astype(np.float32), clean, fs, bad_list, emg_channels,
-                            bridges, P, coef, qc_ok, reason, stats)
+                            bridges, P, coef, qc_ok, reason, stats, labels)
 
 
 def clean_epoch_starts(clean: np.ndarray, nperseg: int, step: int) -> np.ndarray:

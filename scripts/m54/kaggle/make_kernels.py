@@ -12,6 +12,10 @@ kernels = {
     "mddtvb-m54-synth": (["synth:bem:m10pop"], ["shahmadi/mddtvb-m54b-bem"]),
     "mddtvb-m54-ctrl": (["ctrl:bem:m10pop"], ["shahmadi/mddtvb-m54b-bem"]),
     "mddtvb-m54-smc": (["ctrl:bem:m10pop:smc"], ["shahmadi/mddtvb-m54b-bem"]),
+    "mddtvb-m54-newds": (["newds:bem:m10pop:modma", "newdsswap:bem:m10pop:modma",
+                          "newds:bem:m10pop:mumtaz", "newdsswap:bem:m10pop:mumtaz"], ["shahmadi/mddtvb-m54b-bem"]),
+    "mddtvb-m54d-somot": (["reuse:bem:m10popsomot", "dev:bem:m10popsomot", "synth:bem:m10popsomot"],
+                          ["shahmadi/mddtvb-m54b-bem"]),
     "mddtvb-m54c-fast": (["reuse:bem:m10popfast", "dev:bem:m10popfast", "synth:bem:m10popfast"],
                          ["shahmadi/mddtvb-m54b-bem"]),
 }

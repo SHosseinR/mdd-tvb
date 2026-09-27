@@ -96,3 +96,31 @@ def test_clean_epochs_stay_inside_clean_spans_and_halves_do_not_overlap():
         assert clean[s:s + 2000].all()
     first, second = split_halves(starts, 2000)
     assert first.max() + 2000 <= second.min()
+
+
+def test_missing_channels_equal_likelihood_of_recorded_subset():
+    """A 19-channel recording (re-referenced over its own channels) stored in the 26-channel layout."""
+    rng = np.random.default_rng(4)
+    missing = ("FC3", "FCz", "FC4", "CP3", "CPz", "CP4", "Oz")
+    present = [LABELS.index(c) for c in LABELS if c not in missing]
+    S = _random_csd(rng)  # model CSD (average reference over 26 channels)
+    X = rng.normal(size=(len(FREQ), 26, 60)) + 1j * rng.normal(size=(len(FREQ), 26, 60))
+    raw = np.einsum("fik,fjk->fij", X, X.conj()) / 60
+    k = len(present)
+    Rk = np.eye(k) - 1.0 / k
+    sub = np.einsum("ij,fjk,lk->fil", Rk, raw[:, present][:, :, present], Rk)  # the 19-channel data
+    C = np.zeros_like(raw)
+    C[np.ix_(range(len(FREQ)), present, present)] = sub
+    D, A, pad = W.observation_operators(LABELS, FREQ, fixed_emg=(), missing=missing)
+    assert int(np.sum(~pad[0])) == k - 1
+    # reference: the Gaussian likelihood of the 19-channel data in a basis of its (k-1)-dim range
+    Ssub = np.einsum("ij,fjk,lk->fil", Rk, S[:, present][:, :, present], Rk)
+    U = np.linalg.svd(Rk)[0][:, : k - 1]
+    f = 3
+    Sr, Cr = U.T @ Ssub[f] @ U, U.T @ sub[f] @ U
+    ref = np.linalg.slogdet(Sr)[1] + np.trace(np.linalg.solve(Sr, Cr)).real
+    Sc = A[f] @ S[f] @ A[f].T
+    Cc = D[f] @ C[f] @ D[f].T
+    r = k - 1
+    got = np.linalg.slogdet(Sc[:r, :r])[1] + np.trace(np.linalg.solve(Sc[:r, :r], Cc[:r, :r])).real
+    assert got == pytest.approx(ref, rel=1e-8)

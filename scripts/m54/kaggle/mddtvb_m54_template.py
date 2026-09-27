@@ -90,7 +90,9 @@ def run(name, args, x64="0"):
 VARIANTS = {"full": ([], "", []), "m10": (["--modes", "10"], "_m10", ["--modes", "10"]),
             "m10pop": (["--modes", "10", "--pop-background"], "_m10", ["--modes", "10"]),
             # fast (beta) generator free per subject; same population fit as m10, bank with 8 free globals
-            "m10popfast": (["--modes", "10", "--pop-background", "--free-fast"], "_m10fast", ["--modes", "10"])}
+            "m10popfast": (["--modes", "10", "--pop-background", "--free-fast"], "_m10fast", ["--modes", "10"]),
+            # somatomotor-specific beta generator (2 parameters fitted in the refinement)
+            "m10popsomot": (["--modes", "10", "--pop-background", "--somot-beta"], "_m10", ["--modes", "10"])}
 POP_OF = {"_m10fast": "_m10"}  # bank tag -> population fit it reuses
 FIX_OF = {"_m10fast": ["--fix", "speed_mm_per_ms", "noise_tau_ms"]}
 
@@ -147,6 +149,19 @@ for stage in STAGES:
         hits = [h for h in glob.glob(f"/kaggle/input/**/population_{lead}{base}.json", recursive=True) if "m54" in h]
         shutil.copy2(hits[0], work / R / f"population_{lead}{base}.json")
         bank(lead, ptag)
+    elif kind in ("newds", "newdsswap"):  # a batch-free dataset, nested within itself (own folds and null)
+        ds = parts[3]
+        _, ptag, _ = VARIANTS[variant]
+        (work / R).mkdir(parents=True, exist_ok=True)
+        if not (work / R / f"bank_{lead}{ptag}.npz").exists():
+            base = POP_OF.get(ptag, ptag)
+            hits = [h for h in glob.glob(f"/kaggle/input/**/population_{lead}{base}.json", recursive=True) if "m54" in h]
+            shutil.copy2(hits[0], work / R / f"population_{lead}{base}.json")
+            bank(lead, ptag)
+        extra = ["--subjects-file", f"{LISTS}/{ds}_restEC_v2.txt", "--splits", f"{LISTS}/splits_{ds}.csv"]
+        swap = kind == "newdsswap"
+        fit(f"{ds}_{lead}{vtag}{'_swap' if swap else ''}", lead, f"{V2}/{ds}_restEC/empirical",
+            extra + (["--swap-halves"] if swap else []), variant)
     elif kind == "ctrl":  # late-era non-depressed clinical groups, fitted like an external cohort
         _, ptag, _ = VARIANTS[variant]
         (work / R).mkdir(parents=True, exist_ok=True)
@@ -175,10 +190,12 @@ for stage in STAGES:
         gen = ["scripts/m54/m54_synthetic.py", "generate", "--lead", lead, "--fits", f"{R}/dev_{lead}{vtag}/subject_fits.csv",
                "--population", f"{R}/population_{lead}{ptag}.json", "--emp-dir", f"{V2}/dev_restEC/empirical",
                "--n", "120", "--out", S]
-        if variant in ("m10pop", "m10popfast"):
+        if variant in ("m10pop", "m10popfast", "m10popsomot"):
             gen += ["--pop-background"]
         if variant == "m10popfast":
             gen += ["--free-fast"]
+        if variant == "m10popsomot":
+            gen += ["--somot-beta"]
         run(f"synthetic_{lead}{vtag}_generate", gen, x64="1")
         if fit(f"synthetic_{lead}{vtag}_fit", lead, f"{S}/empirical", ["--subjects-file", f"{S}/subjects.txt"], variant):
             run(f"synthetic_{lead}{vtag}_summary", ["scripts/m54/m54_synthetic.py", "summarise", "--out", S,

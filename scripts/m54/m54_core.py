@@ -42,10 +42,21 @@ FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
 FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
 
 
-def configure(free_fast: bool = False) -> None:
-    """Choose the free globals; ``free_fast`` lets the fast (beta) generator's
-    time-scale ratio and power fraction vary per subject (call before make_setup)."""
-    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX
+SOMOT_BETA = False  # sensorimotor-specific fast (beta) generator, see configure()
+EXTRA_NAMES = ("somot_fast_ratio", "somot_fast_fraction")
+
+
+def configure(free_fast: bool = False, somot_beta: bool = False) -> None:
+    """Choose the free globals (call before make_setup).
+
+    ``free_fast`` lets the global fast (beta) generator's time-scale ratio and
+    power fraction vary per subject.  ``somot_beta`` gives the somatomotor network
+    its own fast-generator ratio and fraction (rolandic beta is an independent
+    rhythm, unlike posterior beta, which is largely an alpha harmonic); the two
+    parameters are appended at the end of theta and fitted in the refinement.
+    """
+    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX, SOMOT_BETA
+    SOMOT_BETA = somot_beta
     FIXED_GLOBALS = (("speed_mm_per_ms", "noise_tau_ms") if free_fast
                      else ("speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms"))
     FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
@@ -97,10 +108,11 @@ class Setup:
 
     @property
     def n_theta(self):
-        return len(FREE_INDEX) + self.d + len(self.nuisance)
+        return len(FREE_INDEX) + self.d + len(self.nuisance) + (len(EXTRA_NAMES) if SOMOT_BETA else 0)
 
     def theta_names(self):
-        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(self.nuisance)
+        extra = list(EXTRA_NAMES) if SOMOT_BETA else []
+        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(self.nuisance) + extra
 
 
 def make_setup(lead_name: str, population: dict | None = None, use_pop: bool = False) -> Setup:
@@ -169,9 +181,16 @@ def combine(setup: Setup, C, common, z, B=None):
     return out
 
 
-def contributions(setup: Setup, u10):
+def contributions(setup: Setup, u10, extra=None):
     phys = LJ.unit_to_physical(u10)
     p, speed = LJ.build_state(phys, setup.static)
+    if extra is not None:  # somatomotor-specific fast generator (unit logits, global bounds)
+        lo, hi = LJ.GLOBAL_BOUNDS[5:7, 0], LJ.GLOBAL_BOUNDS[5:7, 1]
+        val = jnp.asarray(lo) + jax.nn.sigmoid(extra) * jnp.asarray(hi - lo)
+        mask = jnp.asarray(setup.static.network_index == list(setup.static.network_names).index("SomMot"))
+        n = mask.shape[0]
+        p = dict(p, fast_ratio=jnp.where(mask, val[0], p["fast_ratio"] * jnp.ones(n)),
+                 fast_fraction=jnp.where(mask, val[1], p["fast_fraction"] * jnp.ones(n)))
     C, common, psi = LJ.contributions_with_common_drive(
         p, setup.static, setup.lead, LJ.delays_for_speed(setup.static, speed), jnp.asarray(COMMON_ORIGIN), COMMON_SPEED)
     return C, common, p, psi
@@ -179,8 +198,16 @@ def contributions(setup: Setup, u10):
 
 def model_csd(setup: Setup, theta, B=None):
     k = len(FREE_INDEX)
+    if SOMOT_BETA:
+        C, common, p, psi = contributions(setup, full_u(setup, theta[:k]), theta[-len(EXTRA_NAMES):])
+        return combine(setup, C, common, theta[k:-len(EXTRA_NAMES)], B), p, psi
     C, common, p, psi = contributions(setup, full_u(setup, theta[:k]))
     return combine(setup, C, common, theta[k:], B), p, psi
+
+
+def extra_init(setup: Setup):
+    """Starting values of the appended parameters: the population's global fast generator."""
+    return setup.u_population[[5, 6]] if SOMOT_BETA else np.zeros(0)
 
 
 def stability(setup: Setup, p, psi):
@@ -204,8 +231,9 @@ class Prior:
 
 def default_prior(setup: Setup) -> Prior:
     k = len(FREE_INDEX)
-    mean = np.concatenate([setup.u_population[FREE_INDEX], setup.z_population])
-    sd = np.concatenate([np.full(k, 1.0), np.full(setup.d, 1.0), np.full(len(setup.nuisance), 1.5)])
+    mean = np.concatenate([setup.u_population[FREE_INDEX], setup.z_population, extra_init(setup)])
+    sd = np.concatenate([np.full(k, 1.0), np.full(setup.d, 1.0), np.full(len(setup.nuisance), 1.5),
+                         np.full(len(extra_init(setup)), 1.0)])
     return Prior(mean, sd)
 
 
@@ -250,7 +278,11 @@ def load_subjects(emp_dir, ids=None, use_emg_flags=True, fixed_emg=W.FIXED_EMG_C
         emg = ()
         if use_emg_flags and qc is not None and isinstance(qc.loc[s, "emg_channels"], str):
             emg = tuple(qc.loc[s, "emg_channels"].split(";"))
-        d, a, pd_ = W.observation_operators(labels, fit.frequency_hz, emg, repair.get(s), fixed_emg=fixed_emg)
+        missing = ()
+        if qc is not None and "missing_channels" in qc.columns and isinstance(qc.loc[s, "missing_channels"], str):
+            missing = tuple(qc.loc[s, "missing_channels"].split(";"))
+        d, a, pd_ = W.observation_operators(labels, fit.frequency_hz, emg, repair.get(s), fixed_emg=fixed_emg,
+                                            missing=missing)
         D.append(d), A.append(a), pad.append(pd_)
         for key, coll in (("fit", fit), ("val", val)):
             Cc, scale = W.project_data(coll.csd[i], d, pd_)

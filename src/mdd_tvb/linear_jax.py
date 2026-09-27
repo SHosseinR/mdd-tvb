@@ -207,13 +207,14 @@ def network_sensor_transfer(p, lead, delays_ms, fine_hz):
     rate_slope = jnp.stack(
         ((1.0 - f) * _sigmoid_slope(psi[:n]), f * _sigmoid_slope(psi[n:])), -1
     )  # (n, 2)
-    observable = jnp.stack((1.0 - f, f))
+    # (n, 2): per-region mix of the two generators (fast_fraction may be scalar or per region)
+    observable = jnp.stack((1.0 - f, f), -1) * jnp.ones((n, 1))
     resp_u = jnp.einsum("fnij,fnj->fni", r, bu)  # (F, n, 2)
     resp_n = r * bn[:, :, None, :]  # (F, n, 2 out, 2 in)
     h = jnp.einsum("ni,fni->fn", rate_slope, resp_u)
-    q = jnp.einsum("i,fni->fn", observable, resp_u)
+    q = jnp.einsum("ni,fni->fn", observable, resp_u)
     g = jnp.einsum("ni,fnij->fnj", rate_slope, resp_n)  # (F, n, 2)
-    pn = jnp.einsum("i,fnij->fnj", observable, resp_n)
+    pn = jnp.einsum("ni,fnij->fnj", observable, resp_n)
     kernel = p["G"] * p["W"][None] * jnp.exp(-1j * omega[:, None, None] * delays_ms[None])
     system = jnp.eye(n)[None] - h[:, :, None] * kernel
     y = lead[None] * q[:, None, :]  # (F, C, n): L diag(q)
