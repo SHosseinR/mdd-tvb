@@ -13,8 +13,9 @@ Two questions from the last round:
 1. **Beta has two sources, and the model can reach only one.** About half of posterior beta is a harmonic of
    non-sinusoidal alpha: significant alpha–beta phase coupling in 54 % of subjects, with the beta peak at twice the
    alpha frequency in 48 %. No linear model can produce harmonics. Central (rolandic) beta is an independent rhythm.
-   Freeing the global beta generator changed nothing: the posterior equals the prior, so the data do not inform it.
-   A sensorimotor-specific beta generator is the targeted fix (§1.3).
+   Freeing the global beta generator changed nothing, and neither did a sensorimotor-specific one. In both cases the
+   posterior equals the prior on real data. The Jansen–Rit generator makes only broad resonances that the background
+   terms can imitate. Individual beta needs a generator with a free peak width (§1.3).
 2. **The model generalises to other EEG systems.** Unchanged except for each dataset's own population background, it
    beats the dataset's population average on unseen halves:
 
@@ -75,7 +76,25 @@ independent rhythm. A linear Gaussian model can never produce harmonic beta. Sco
 penalises every linear model equally; it is not a parameter problem.
 
 ### 1.3 A sensorimotor-specific beta generator
-__SOMOT__
+The model code now accepts per-region fast-generator parameters (`linear_jax`, backward compatible; all tests pass).
+The somatomotor network gets its own fast-generator ratio and power fraction (2 parameters, prior centred on the
+population value), fitted in the continuous refinement (`--somot-beta`; job `mddtvb-m54d-somot`).
+
+| | current model | + somatomotor beta generator |
+|---|---|---|
+| beta shape 13–30 Hz, non-muscle channels (unseen / average) | 0.900 | 0.900 |
+| beta shape at central channels (FC/C/CP rows) | 1.006 | 1.006 (paired 0.000) |
+| whole-spectrum deviance | 0.840 | 0.840 |
+| synthetic recovery r: ratio / fraction | — | 0.49 / 0.66 |
+| posterior SD / prior SD on real data | — | 0.97–0.99 |
+
+It changes nothing on real data. The parameters are partly recoverable when the data come from the model itself, but
+real recordings do not inform them. Central beta is predicted exactly at the population-average level by both
+versions. Both attempts point at the generator, not its parameters. A Jansen–Rit node at beta time scales produces a
+broad resonance, and a broad hump is interchangeable with the aperiodic and population-background terms. Individual
+beta needs a source whose peak *width* is free: a damped-oscillator source with its own quality factor (as in the
+"sum of damped oscillators" accounts of alpha and 1/f), or the corticothalamic loop, whose delay sets a narrow
+resonance. Posterior (harmonic) beta additionally needs a waveform term, which no linear model has.
 
 ---
 
@@ -169,11 +188,12 @@ Random-effects group comparison with split-half-calibrated posteriors (`m54_grou
   biomarker. This matches the literature's replication record for resting-EEG depression markers.
 - **The model.** It transfers across systems, but three structural gaps are now clear:
   - no harmonic (non-sinusoidal) alpha;
-  - no independent sensorimotor beta (§1.3 tests the fix);
+  - no narrow independent rhythm besides alpha. Beta cannot be fitted by adding Jansen–Rit parameters (§1.3);
   - no frontal-midline theta source: theta topography is worse than the population average in all four datasets.
 
-  The corticothalamic loop plus a waveform (harmonic) term would address the first two; a frontal-midline theta
-  generator the third.
+  A generator with a free resonance width is needed. That could be damped-oscillator sources for beta and
+  frontal-midline theta, or the corticothalamic loop, together with a waveform (harmonic) term for posterior beta.
+  That is a new model component, not a parameter change.
 - **For TMS.** Resting EEG does not constrain individual differences that matter clinically here. The better use of
   the model is to fit TMS-evoked responses (PyTepFit data), where stimulation constrains the dynamics directly.
 
