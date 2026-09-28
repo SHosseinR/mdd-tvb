@@ -2,6 +2,8 @@
 
 * OpenNeuro ds003478 "EEG: Depression rest" (Cavanagh; public S3 bucket, no credentials);
   ``--runs 1`` fetches only run-01 (the pre-task rest) plus all metadata.
+* Any other OpenNeuro dataset by id, e.g. ds003474 "EEG: Probabilistic Selection and
+  Depression" (the same 122 participants and IDs as ds003478).
 * Mumtaz 2016 "MDD Patients and Healthy Controls EEG Data (New)" (figshare 4244171).
 Files already present with the right size are skipped, so the script can be re-run.
 """
@@ -65,7 +67,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="D:/university/projects/mdd-new-datasets")
     ap.add_argument("--which", nargs="+", default=["mumtaz", "ds003478"])
-    ap.add_argument("--runs", default="1", help="ds003478 runs to fetch: '1' or 'all'")
+    ap.add_argument("--runs", default="1", help="OpenNeuro runs to fetch: '1' or 'all' (files without runs are always fetched)")
     ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
     out = Path(args.out)
@@ -75,13 +77,13 @@ def main():
         (out / "mumtaz2016").mkdir(parents=True, exist_ok=True)
         (out / "mumtaz2016" / "figshare_metadata.json").write_text(json.dumps(meta, indent=1))
         run_pool(jobs, args.workers, "mumtaz")
-    if "ds003478" in args.which:
-        keys = s3_listing("ds003478/")
+    for ds in [w for w in args.which if re.fullmatch(r"ds\d{6}", w)]:
+        keys = s3_listing(f"{ds}/")
         if args.runs != "all":
             keys = [(k, s) for k, s in keys if "_run-" not in k or f"_run-0{args.runs}_" in k]
         jobs = [(f"{S3}/{urllib.parse.quote(k)}", out / k, s) for k, s in keys]
-        print(f"ds003478: {len(jobs)} files, {sum(s for _, s in keys) / 1e9:.2f} GB", flush=True)
-        run_pool(jobs, args.workers, "ds003478")
+        print(f"{ds}: {len(jobs)} files, {sum(s for _, s in keys) / 1e9:.2f} GB", flush=True)
+        run_pool(jobs, args.workers, ds)
 
 
 if __name__ == "__main__":

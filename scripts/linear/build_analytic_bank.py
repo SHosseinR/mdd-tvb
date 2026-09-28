@@ -40,6 +40,8 @@ def main() -> None:
                     help="bank(s) whose 'unit' vectors the subject_fits 'state' column indexes")
     ap.add_argument("--fix", nargs="*", default=[],
                     help="global parameter names held at the population value in every state")
+    ap.add_argument("--thalamus", action="store_true",
+                    help="every state carries the population's corticothalamic loop (population 'thal_u')")
     args = ap.parse_args()
     cfg = load_spectral_m5_config(ROOT / "configs/m5_spectral.toml")
     lin = CandidateLinearizer(cfg)
@@ -51,7 +53,9 @@ def main() -> None:
     else:
         gain = lin.gain
     lead = LJ.average_reference(gain)
-    population = json.loads((ROOT / args.population).read_text())["best"]
+    pop_all = json.loads((ROOT / args.population).read_text())
+    population = pop_all["best"]
+    thal = LJ.thal_unit_to_physical(jnp.asarray(pop_all["thal_u"])) if args.thalamus else None
     center = np.asarray(population["x"][:10])
     # Sobol box in logit space around the population state, clipped to
     # the declared physical bounds by construction of the sigmoid map.
@@ -82,10 +86,14 @@ def main() -> None:
     def evaluate(uu):
         phys = LJ.unit_to_physical(uu)
         p, speed = LJ.build_state(phys, static)
+        if thal is not None:
+            p = LJ.with_thalamus(p, thal)
         C, common, psi = LJ.contributions_with_common_drive(
             p, static, lead, LJ.delays_for_speed(static, speed), origin, args.common_speed)
         absc = LJ.node_abscissa_per_s(p, psi)
         sg = LJ.small_gain(p, psi, jnp.asarray(static.fine_frequency_hz))
+        loop_ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
+        sg = jnp.where(loop_ok & (dist > 0.05), sg, jnp.inf)  # an unstable own loop fails certification
         resid = jnp.max(jnp.abs(psi - LJ._psi_map(psi, p)))
         margin = jnp.min(LJ.fold_margin(p, psi))
         return C, common, phys, jnp.max(absc), sg, resid, margin

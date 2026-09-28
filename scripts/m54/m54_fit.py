@@ -75,13 +75,16 @@ def main() -> None:
                     help="somatomotor-specific fast (beta) generator ratio and fraction, fitted in the refinement")
     ap.add_argument("--free-fast", action="store_true",
                     help="fit the fast (beta) generator's time-scale ratio and power fraction per subject")
+    ap.add_argument("--thalamus", choices=["T1", "T2"], default=None,
+                    help="corticothalamic loop per region: T1 = loop gains free (delay fixed), "
+                         "T2 = loop gains and delay free (cortical time constants fixed)")
     ap.add_argument("--freeze-neural", action="store_true",
                     help="ablation: neural globals and gains fixed at the population fit; only nuisance terms fitted")
     args = ap.parse_args()
     out = M.ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     population = json.loads((M.ROOT / args.population).read_text())
-    M.configure(free_fast=args.free_fast, somot_beta=args.somot_beta)
+    M.configure(free_fast=args.free_fast, somot_beta=args.somot_beta, thalamus=args.thalamus)
     setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     prior = M.default_prior(setup)
     k = len(M.FREE_INDEX)
@@ -288,6 +291,10 @@ def main() -> None:
         phys = np.asarray(LJ.unit_to_physical(M.full_u(setup, theta[:k])))
         for j, name in enumerate(LJ.GLOBAL_NAMES):
             row[f"phys_{name}"] = float(phys[j])
+        if M.THALAMUS:
+            tphys = np.asarray(LJ.thal_unit_to_physical(M.thal_unit(setup, theta[-len(M.EXTRA_NAMES):])))
+            for j, name in enumerate(LJ.THAL_NAMES):
+                row[f"phys_{name}"] = float(tphys[j])
         z = np.asarray(theta[k:])
         beta = z[:d] - z[:d].mean()
         centre = np.eye(d) - 1.0 / d  # centred gains remove the unidentified common offset

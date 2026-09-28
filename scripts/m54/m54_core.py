@@ -43,10 +43,15 @@ FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
 
 
 SOMOT_BETA = False  # sensorimotor-specific fast (beta) generator, see configure()
-EXTRA_NAMES = ("somot_fast_ratio", "somot_fast_fraction")
+SOMOT_NAMES = ("somot_fast_ratio", "somot_fast_fraction")
+THALAMUS = None     # corticothalamic loop variant: None, "T1" or "T2" (see configure())
+THAL_FREE = {"T1": ("thal_gain", "thal_gamma"), "T2": ("thal_gain", "thal_gamma", "thal_t0_ms")}
+# Starting loop (physical): moderate relay gain, reticular path half as strong, 80 ms round trip.
+THAL_START = (30.0, 0.5, 80.0, 0.3)
+EXTRA_NAMES: tuple = ()  # per-subject parameters appended at the end of theta (fitted in the refinement)
 
 
-def configure(free_fast: bool = False, somot_beta: bool = False) -> None:
+def configure(free_fast: bool = False, somot_beta: bool = False, thalamus: str | None = None) -> None:
     """Choose the free globals (call before make_setup).
 
     ``free_fast`` lets the global fast (beta) generator's time-scale ratio and
@@ -54,13 +59,24 @@ def configure(free_fast: bool = False, somot_beta: bool = False) -> None:
     its own fast-generator ratio and fraction (rolandic beta is an independent
     rhythm, unlike posterior beta, which is largely an alpha harmonic); the two
     parameters are appended at the end of theta and fitted in the refinement.
+    ``thalamus`` adds a corticothalamic loop to every region (linear_jax.thalamic_loop).
+    The population fit estimates all four loop parameters; per subject, "T1" frees
+    the loop gains with the cortical time constants free and the delay fixed, "T2"
+    frees the gains and the delay with the cortical time constants fixed at the
+    population values (the two ways of making alpha cannot trade off).
     """
-    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX, SOMOT_BETA
-    SOMOT_BETA = somot_beta
-    FIXED_GLOBALS = (("speed_mm_per_ms", "noise_tau_ms") if free_fast
-                     else ("speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms"))
+    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX, SOMOT_BETA, THALAMUS, EXTRA_NAMES
+    if somot_beta and thalamus:
+        raise ValueError("somot_beta and thalamus are separate variants")
+    SOMOT_BETA, THALAMUS = somot_beta, thalamus
+    fixed = (["speed_mm_per_ms", "noise_tau_ms"] if free_fast
+             else ["speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms"])
+    if thalamus == "T2":
+        fixed += ["a_scale", "b_scale"]
+    FIXED_GLOBALS = tuple(fixed)
     FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
     FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
+    EXTRA_NAMES = SOMOT_NAMES if somot_beta else (THAL_FREE[thalamus] if thalamus else ())
 TIED = ("Cont", "Limbic")
 NUISANCE = ("obs_fraction", "obs_exponent", "src_fraction", "src_exponent", "common_share")
 COMMON_ORIGIN = (0.0, -15.0, 60.0)
@@ -97,6 +113,7 @@ class Setup:
     u_population: np.ndarray  # (10,) unconstrained globals of the population fit
     z_population: np.ndarray  # (d + len(nuisance),)
     use_pop: bool = False     # empirical population CSD as an extra component (model nests the null)
+    t_population: np.ndarray | None = None  # (4,) unconstrained corticothalamic loop of the population fit
 
     @property
     def d(self):
@@ -108,11 +125,10 @@ class Setup:
 
     @property
     def n_theta(self):
-        return len(FREE_INDEX) + self.d + len(self.nuisance) + (len(EXTRA_NAMES) if SOMOT_BETA else 0)
+        return len(FREE_INDEX) + self.d + len(self.nuisance) + len(EXTRA_NAMES)
 
     def theta_names(self):
-        extra = list(EXTRA_NAMES) if SOMOT_BETA else []
-        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(self.nuisance) + extra
+        return list(FREE_GLOBALS) + [f"log_gain_{n}" for n in self.spatial] + list(self.nuisance) + list(EXTRA_NAMES)
 
 
 def make_setup(lead_name: str, population: dict | None = None, use_pop: bool = False) -> Setup:
@@ -140,8 +156,10 @@ def make_setup(lead_name: str, population: dict | None = None, use_pop: bool = F
         z_pop = np.asarray(population["z"], float)
     if use_pop and len(z_pop) == len(names) + len(NUISANCE):
         z_pop = np.concatenate([z_pop, [-1.0]])  # start at ~26 % population-background power
+    t_pop = (np.asarray(population["thal_u"], float) if population is not None and "thal_u" in population
+             else LJ.thal_physical_to_unit(np.asarray(THAL_START)))
     return Setup(static, lead, jnp.asarray(cov / np.mean(np.diag(cov))), jnp.asarray(mapping), names,
-                 jnp.asarray(freq), u_pop, z_pop, use_pop)
+                 jnp.asarray(freq), u_pop, z_pop, use_pop, t_pop)
 
 
 def full_u(setup: Setup, u_free):
@@ -181,10 +199,22 @@ def combine(setup: Setup, C, common, z, B=None):
     return out
 
 
-def contributions(setup: Setup, u10, extra=None):
+def thal_unit(setup: Setup, extra=None):
+    """Full (4,) unconstrained loop vector: population values, free entries from ``extra``."""
+    t = jnp.asarray(setup.t_population)
+    if extra is not None:
+        for j, name in enumerate(EXTRA_NAMES):
+            t = t.at[LJ.THAL_NAMES.index(name)].set(extra[j])
+    return t
+
+
+def contributions(setup: Setup, u10, extra=None, thal_u=None):
     phys = LJ.unit_to_physical(u10)
     p, speed = LJ.build_state(phys, setup.static)
-    if extra is not None:  # somatomotor-specific fast generator (unit logits, global bounds)
+    if THALAMUS:
+        t = thal_unit(setup, extra) if thal_u is None else thal_u
+        p = LJ.with_thalamus(p, LJ.thal_unit_to_physical(t))
+    elif extra is not None:  # somatomotor-specific fast generator (unit logits, global bounds)
         lo, hi = LJ.GLOBAL_BOUNDS[5:7, 0], LJ.GLOBAL_BOUNDS[5:7, 1]
         val = jnp.asarray(lo) + jax.nn.sigmoid(extra) * jnp.asarray(hi - lo)
         mask = jnp.asarray(setup.static.network_index == list(setup.static.network_names).index("SomMot"))
@@ -198,7 +228,7 @@ def contributions(setup: Setup, u10, extra=None):
 
 def model_csd(setup: Setup, theta, B=None):
     k = len(FREE_INDEX)
-    if SOMOT_BETA:
+    if EXTRA_NAMES:
         C, common, p, psi = contributions(setup, full_u(setup, theta[:k]), theta[-len(EXTRA_NAMES):])
         return combine(setup, C, common, theta[k:-len(EXTRA_NAMES)], B), p, psi
     C, common, p, psi = contributions(setup, full_u(setup, theta[:k]))
@@ -206,8 +236,12 @@ def model_csd(setup: Setup, theta, B=None):
 
 
 def extra_init(setup: Setup):
-    """Starting values of the appended parameters: the population's global fast generator."""
-    return setup.u_population[[5, 6]] if SOMOT_BETA else np.zeros(0)
+    """Starting values of the appended parameters: the population's values."""
+    if SOMOT_BETA:  # the population's global fast generator
+        return setup.u_population[[5, 6]]
+    if THALAMUS:
+        return np.asarray(setup.t_population)[[LJ.THAL_NAMES.index(n) for n in EXTRA_NAMES]]
+    return np.zeros(0)
 
 
 def stability(setup: Setup, p, psi):
@@ -217,6 +251,10 @@ def stability(setup: Setup, p, psi):
     penalty = (jnp.mean(jax.nn.relu(absc + 2.0) ** 2) * 1e-2 + jnp.mean(jax.nn.relu(0.4 - margin) ** 2) * 10.0
                + jax.nn.relu(sg - 0.9) ** 2 * 10.0)
     certified = (jnp.max(absc) < -1.0) & (jnp.min(margin) > 0.3) & (sg < 1.0)
+    if THALAMUS:  # each region's own loop: no encirclement, and keep away from the critical point
+        ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
+        penalty = penalty + jax.nn.relu(0.15 - dist) ** 2 * 100.0
+        certified = certified & ok & (dist > 0.05)
     return penalty, certified
 
 

@@ -37,6 +37,10 @@ else:  # Kaggle auto-extracted the archive: copy the whole bundle root
     shutil.copytree(Path(roots[0]).parents[1], work, dirs_exist_ok=True)
 extract("mddtvb_code.tar.gz", ["src/mdd_tvb", "scripts/linear", "scripts/m54", "configs/m53_frozen"], "linear-code")
 extract("mddtvb_external.tar.gz", ["outputs/external", "outputs/preproc_v2", "configs/m54_lists"], "tvb-external")
+# eyes-open spectra, updated subject lists and ERPs (optional dataset shahmadi/mdd-tvb-eo)
+extract("mddtvb_eo.tar.gz", ["outputs/preproc_v2/dev_restEO", "outputs/preproc_v2/rtms_restEO",
+                             "outputs/preproc_v2/ds003478_restEO", "outputs/preproc_v2/mumtaz_restEO",
+                             "configs/m54_lists", "outputs/erp"], "tvb-eo")
 for need in ("scripts/m54/m54_fit.py", "configs/m53_frozen/population_fit_tvb.json",
              "outputs/preproc_v2/dev_restEC/empirical/cross_spectra_fit.npz", "configs/m54_lists/dev_restEC_v2.txt"):
     assert (work / need).exists(), f"missing {need}"
@@ -92,9 +96,13 @@ VARIANTS = {"full": ([], "", []), "m10": (["--modes", "10"], "_m10", ["--modes",
             # fast (beta) generator free per subject; same population fit as m10, bank with 8 free globals
             "m10popfast": (["--modes", "10", "--pop-background", "--free-fast"], "_m10fast", ["--modes", "10"]),
             # somatomotor-specific beta generator (2 parameters fitted in the refinement)
-            "m10popsomot": (["--modes", "10", "--pop-background", "--somot-beta"], "_m10", ["--modes", "10"])}
-POP_OF = {"_m10fast": "_m10"}  # bank tag -> population fit it reuses
-FIX_OF = {"_m10fast": ["--fix", "speed_mm_per_ms", "noise_tau_ms"]}
+            "m10popsomot": (["--modes", "10", "--pop-background", "--somot-beta"], "_m10", ["--modes", "10"]),
+            # corticothalamic loop: population fit with the loop; T1 loop gains free, T2 gains + delay free
+            "m10popthal1": (["--modes", "10", "--pop-background", "--thalamus", "T1"], "_m10thal", ["--modes", "10", "--thalamus"]),
+            "m10popthal2": (["--modes", "10", "--pop-background", "--thalamus", "T2"], "_m10thal2", ["--modes", "10", "--thalamus"])}
+POP_OF = {"_m10fast": "_m10", "_m10thal2": "_m10thal"}  # bank tag -> population fit it reuses
+FIX_OF = {"_m10fast": ["--fix", "speed_mm_per_ms", "noise_tau_ms"],
+          "_m10thal2": FIX + ["a_scale", "b_scale"]}
 
 
 def fit(name, lead, emp, extra, variant="full"):
@@ -117,7 +125,8 @@ def bank(lead, ptag):
     if ptag in POP_OF and not (work / f"{R}/population_{lead}{ptag}.json").exists():
         shutil.copy2(work / pop, work / f"{R}/population_{lead}{ptag}.json")
     run(f"bank_{lead}{ptag}", ["scripts/linear/build_analytic_bank.py", "--lead", lead, "--samples", "2000", "--half-width", "1.2",
-                               "--population", pop, "--out", f"{R}/bank_{lead}{ptag}.npz"] + FIX_OF.get(ptag, FIX))
+                               "--population", pop, "--out", f"{R}/bank_{lead}{ptag}.npz"] + FIX_OF.get(ptag, FIX)
+        + (["--thalamus"] if "thal" in ptag else []))
 
 
 DEV = ["--subjects-file", f"{LISTS}/dev_restEC_v2.txt"]
@@ -190,8 +199,10 @@ for stage in STAGES:
         gen = ["scripts/m54/m54_synthetic.py", "generate", "--lead", lead, "--fits", f"{R}/dev_{lead}{vtag}/subject_fits.csv",
                "--population", f"{R}/population_{lead}{ptag}.json", "--emp-dir", f"{V2}/dev_restEC/empirical",
                "--n", "120", "--out", S]
-        if variant in ("m10pop", "m10popfast", "m10popsomot"):
+        if "pop" in variant:
             gen += ["--pop-background"]
+        if "thal" in variant:
+            gen += ["--thalamus", "T" + variant[-1]]
         if variant == "m10popfast":
             gen += ["--free-fast"]
         if variant == "m10popsomot":
@@ -200,6 +211,34 @@ for stage in STAGES:
         if fit(f"synthetic_{lead}{vtag}_fit", lead, f"{S}/empirical", ["--subjects-file", f"{S}/subjects.txt"], variant):
             run(f"synthetic_{lead}{vtag}_summary", ["scripts/m54/m54_synthetic.py", "summarise", "--out", S,
                                                     "--recovered", f"{R}/synthetic_{lead}{vtag}_fit/subject_fits.csv"])
+    elif kind == "bank":  # build a variant's bank from a population fit produced earlier in this job
+        bank(lead, VARIANTS[variant][1])
+    elif kind == "script":  # run a repository script: script:<lead>:<variant>:<path relative to repo>:<args...>
+        run(Path(parts[3]).stem, [parts[3]] + parts[4:], x64="0")
+    elif kind in ("joint", "jointswap"):  # joint eyes-closed + eyes-open fit: joint:lead:variant:cohort:delta[:subjects]
+        cohort, delta = parts[3], parts[4]
+        opts, ptag, _ = VARIANTS[variant]
+        (work / R).mkdir(parents=True, exist_ok=True)
+        if not (work / R / f"bank_{lead}{ptag}.npz").exists():
+            base = POP_OF.get(ptag, ptag)
+            if not (work / R / f"population_{lead}{base}.json").exists():
+                hits = [h for h in glob.glob(f"/kaggle/input/**/population_{lead}{base}.json", recursive=True) if "m54" in h]
+                shutil.copy2(hits[0], work / R / f"population_{lead}{base}.json")
+            bank(lead, ptag)
+        subj = parts[5] if len(parts) > 5 else f"{LISTS}/{cohort}_restEC_v2.txt"
+        extra = ["--emp-ec", f"{V2}/{cohort}_restEC/empirical", "--emp-eo", f"{V2}/{cohort}_restEO/empirical",
+                 "--subjects-file", subj, "--delta", delta]
+        if cohort == "rtms":
+            extra += ["--null-ec", f"{V2}/dev_restEC/empirical", "--null-eo", f"{V2}/dev_restEO/empirical",
+                      "--dev-subjects-file", f"{LISTS}/dev_restEC_v2.txt"]
+        elif cohort != "dev":
+            extra += ["--splits", f"{LISTS}/splits_{cohort}.csv"]
+        opts = [o for o in opts if o != "--modes" and not o.isdigit()]  # m54_joint projects on 10 modes by default
+        tag = Path(subj).stem.replace("_restEC_v2", "")
+        name = f"joint_{tag}_{lead}{'' if variant == 'm10pop' else '_' + variant}_{delta}{'_swap' if kind == 'jointswap' else ''}"
+        run(name, ["scripts/m54/m54_joint.py", "--lead", lead, "--population", f"{R}/population_{lead}{POP_OF.get(ptag, ptag)}.json",
+                   "--bank", f"{R}/bank_{lead}{ptag}.npz", "--out", f"{R}/{name}"] + extra + opts
+            + (["--swap-halves"] if kind == "jointswap" else []))
     elif kind == "m53v2":  # frozen M5.3 pipeline on the v2 spectra (TVB)
         pop = "configs/m53_frozen/population_fit_tvb.json"
         B = "outputs/m53v2"

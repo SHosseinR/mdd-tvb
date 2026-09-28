@@ -192,6 +192,98 @@ def node_responses(p, psi, s):
     return r, bu, bn
 
 
+# ---------------------------------------------------------------------------
+# Corticothalamic loop (Robinson-type relay + reticular nuclei, linearised)
+# ---------------------------------------------------------------------------
+# Every region's output rate reaches a thalamic relay population (s) and the
+# reticular nucleus (r) after t0/2; the relay projects back to the region's
+# long-range (pyramidal) input after another t0/2.  With second-order thalamic
+# synaptic filters L(w) = 1/((1 + iw/alpha)(1 + iw/beta)) the closed thalamic
+# circuit reduces to one transfer function from cortical rate to cortical input:
+#     theta(w) = g exp(-i w t0) L (1 - gamma L) / (1 + kappa L^2)
+# g: cortex -> relay -> cortex gain; gamma: cortex -> reticular -| relay path
+# relative to the direct one; kappa: relay <-> reticular loop.  The loop's mean
+# (zero-frequency) feedback is absorbed into the fitted mean drive ``mu``, so the
+# equilibrium is unchanged and the loop acts on fluctuations only.
+THAL_ALPHA = 0.06   # 1/ms (60 /s)
+THAL_BETA = 0.24    # 1/ms
+THAL_NAMES = ("thal_gain", "thal_gamma", "thal_t0_ms", "thal_kappa")
+THAL_BOUNDS = np.asarray([[2.0, 400.0], [0.0, 1.5], [50.0, 130.0], [0.0, 2.0]])
+THAL_LOG_SCALED = {0}
+
+
+def thal_unit_to_physical(u):
+    z = jax.nn.sigmoid(u)
+    lo, hi = jnp.asarray(THAL_BOUNDS[:, 0]), jnp.asarray(THAL_BOUNDS[:, 1])
+    lin = lo + z * (hi - lo)
+    mask = jnp.asarray([i in THAL_LOG_SCALED for i in range(len(THAL_NAMES))])
+    lo_s, hi_s = jnp.where(mask, lo, 1.0), jnp.where(mask, hi, 2.0)
+    log = jnp.exp(jnp.log(lo_s) + z * (jnp.log(hi_s) - jnp.log(lo_s)))
+    return jnp.where(mask, log, lin)
+
+
+def thal_physical_to_unit(x):
+    x = np.asarray(x, dtype=float)
+    lo, hi = THAL_BOUNDS[:, 0], THAL_BOUNDS[:, 1]
+    z = np.empty_like(x)
+    for i in range(len(THAL_NAMES)):
+        if i in THAL_LOG_SCALED:
+            z[..., i] = (np.log(x[..., i]) - np.log(lo[i])) / (np.log(hi[i]) - np.log(lo[i]))
+        else:
+            z[..., i] = (x[..., i] - lo[i]) / (hi[i] - lo[i])
+    z = np.clip(z, 1e-6, 1 - 1e-6)
+    return np.log(z / (1 - z))
+
+
+def with_thalamus(p, thal_physical):
+    """Parameter dict with the corticothalamic loop switched on (physical values)."""
+    g, gamma, t0, kappa = (thal_physical[i] for i in range(4))
+    return dict(p, thal_gain=g, thal_gamma=gamma, thal_t0=t0, thal_kappa=kappa)
+
+
+def thalamic_loop(p, omega, n):
+    """theta(w) as an (F, n) array, or None when the loop is off."""
+    if "thal_gain" not in p:
+        return None
+    s = 1j * omega[:, None]
+    L = 1.0 / ((1.0 + s / THAL_ALPHA) * (1.0 + s / THAL_BETA))
+    t0 = jnp.broadcast_to(jnp.asarray(p["thal_t0"]), (n,))[None]
+    g = jnp.broadcast_to(jnp.asarray(p["thal_gain"]), (n,))[None]
+    theta = g * jnp.exp(-s * t0) * L * (1.0 - p["thal_gamma"] * L) / (1.0 + p["thal_kappa"] * L * L)
+    return jnp.broadcast_to(theta, (omega.shape[0], n))
+
+
+def long_range_response(p, psi, s):
+    """h(iw): (F, n) rate response of each node to its long-range input."""
+    n = p["a"].shape[0]
+    r, bu, _ = node_responses(p, psi, s)
+    f = p["fast_fraction"]
+    rate_slope = jnp.stack(((1.0 - f) * _sigmoid_slope(psi[:n]), f * _sigmoid_slope(psi[n:])), -1)
+    return jnp.einsum("ni,fnij,fnj->fn", rate_slope, r, bu)
+
+
+def thalamic_certificate(p, psi, frequency_max_hz: float = 200.0, step_hz: float = 0.05):
+    """Stability of every region's own corticothalamic loop (argument principle).
+
+    For a stable node the scalar characteristic function 1 - h(s) theta(s) must
+    not encircle the origin along the imaginary axis (winding number zero, positive
+    at w = 0).  Returns (all_ok, min |1 - h theta|); with the loop off, (True, 1).
+    """
+    if "thal_gain" not in p:
+        return jnp.asarray(True), jnp.asarray(1.0)
+    n = p["a"].shape[0]
+    f = jnp.arange(0.0, frequency_max_hz + step_hz, step_hz)
+    omega = 2.0 * jnp.pi * f / 1000.0
+    h = long_range_response(p, psi, 1j * omega)
+    c = 1.0 - h * thalamic_loop(p, omega, n)
+    ang = jnp.angle(c)
+    d = jnp.diff(ang, axis=0)
+    d = (d + jnp.pi) % (2.0 * jnp.pi) - jnp.pi  # wrapped increments (grid is dense)
+    winding = jnp.round(2.0 * jnp.sum(d, axis=0) / (2.0 * jnp.pi))
+    ok = jnp.all(winding == 0) & jnp.all(jnp.real(c[0]) > 0)
+    return ok, jnp.min(jnp.abs(c))
+
+
 def network_sensor_transfer(p, lead, delays_ms, fine_hz):
     """Sensor transfer from every (region, generator) noise input.
 
@@ -216,6 +308,9 @@ def network_sensor_transfer(p, lead, delays_ms, fine_hz):
     g = jnp.einsum("ni,fnij->fnj", rate_slope, resp_n)  # (F, n, 2)
     pn = jnp.einsum("ni,fnij->fnj", observable, resp_n)
     kernel = p["G"] * p["W"][None] * jnp.exp(-1j * omega[:, None, None] * delays_ms[None])
+    theta = thalamic_loop(p, omega, n)
+    if theta is not None:  # each region's own corticothalamic loop: a delayed self-connection
+        kernel = kernel + theta[:, :, None] * jnp.eye(n)[None]
     system = jnp.eye(n)[None] - h[:, :, None] * kernel
     y = lead[None] * q[:, None, :]  # (F, C, n): L diag(q)
     y = jnp.einsum("fcn,fnm->fcm", y, kernel)  # L diag(q) K
@@ -515,16 +610,19 @@ def node_abscissa_per_s(p, psi):
 
 
 def small_gain(p, psi, fine_hz):
-    """max_w max_i |h_i(iw)| * G * ||W||_2 on the fitted grid (sufficient if <1)."""
+    """max_w max_i |h_i(iw)| * G * ||W||_2 on the fitted grid (sufficient if <1).
+
+    With the corticothalamic loop on, h is replaced by the node-plus-own-loop
+    response h / (1 - h theta): det(I - diag(h)(GW + theta I)) factorises into the
+    scalar loops (see ``thalamic_certificate``) times det(I - diag(h~) G W).
+    """
 
     n = p["a"].shape[0]
-    s = 2j * jnp.pi * fine_hz / 1000.0
-    r, bu, _ = node_responses(p, psi, s)
-    f = p["fast_fraction"]
-    rate_slope = jnp.stack(
-        ((1.0 - f) * _sigmoid_slope(psi[:n]), f * _sigmoid_slope(psi[n:])), -1
-    )
-    h = jnp.einsum("ni,fnij,fnj->fn", rate_slope, r, bu)
+    omega = 2.0 * jnp.pi * fine_hz / 1000.0
+    h = long_range_response(p, psi, 1j * omega)
+    theta = thalamic_loop(p, omega, n)
+    if theta is not None:
+        h = h / (1.0 - h * theta)
     norm_w = jnp.linalg.norm(p["W"], ord=2)
     return jnp.max(jnp.abs(h)) * p["G"] * norm_w
 

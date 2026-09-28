@@ -4,7 +4,8 @@ Maximises the summed profiled Whittle likelihood of the development subjects'
 *first halves* (each subject keeps its own overall scale).  The fitted values of
 the four non-identifiable globals are then held fixed for every subject fit.
 The output JSON also carries ``best.x`` so build_analytic_bank.py can centre a
-bank on it.
+bank on it.  ``--thalamus`` adds the four corticothalamic-loop parameters
+(``thal_u`` in the output), started at m54_core.THAL_START.
 """
 from __future__ import annotations
 
@@ -39,8 +40,12 @@ def main() -> None:
     ap.add_argument("--maxiter", type=int, default=80)
     ap.add_argument("--out", required=True)
     ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes (0: all)")
+    ap.add_argument("--thalamus", action="store_true", help="fit the corticothalamic loop's four parameters too")
     args = ap.parse_args()
+    if args.thalamus:
+        M.configure(thalamus="T1")
     setup = M.make_setup(args.lead, None)
+    nt = 4 if args.thalamus else 0
     u0, z0 = m53_start(M.ROOT / args.start, setup)
     ids = Path(M.ROOT / args.subjects_file).read_text().split() if args.subjects_file else None
     if ids is None:
@@ -60,15 +65,15 @@ def main() -> None:
     nz = len(z0)
 
     def objective(x):
-        u, z = x[:10], x[10:]
-        C, common, p, psi = M.contributions(setup, u)
+        u, t, z = x[:10], x[10:10 + nt], x[10 + nt:]
+        C, common, p, psi = M.contributions(setup, u, thal_u=t if nt else None)
         S = M.combine(setup, C, common, z)
         nll = jax.vmap(lambda a, pd_, c, n: W.profiled_nll(S, a, pd_, c, n)[0])(A, pad, Cc, nu)
         pen, cert = M.stability(setup, p, psi)
         # tiny ridge on the spatial log-gains removes their free common offset
         return jnp.sum(nll) / dof + pen + 1e-4 * jnp.sum(z[:setup.d] ** 2), cert
 
-    x0 = jnp.asarray(np.concatenate([u0, z0]))
+    x0 = jnp.asarray(np.concatenate([u0, np.asarray(setup.t_population)[:nt], z0]))
     vg = jax.jit(jax.value_and_grad(lambda x: objective(x)[0]))
     cert_fn = jax.jit(lambda x: objective(x)[1])
     history = []
@@ -84,16 +89,19 @@ def main() -> None:
             print(f"eval {len(history)} {time.time()-t0:.0f}s nll/dof {v:.5f}", flush=True)
         return v, g
 
-    bounds = [(-6, 6)] * 10 + [(-4, 4)] * setup.d + [(-6, 6)] * 5
+    bounds = [(-6, 6)] * (10 + nt) + [(-4, 4)] * setup.d + [(-6, 6)] * 5
     res = minimize(fun, np.asarray(x0), jac=True, method="L-BFGS-B", bounds=bounds,
                    options={"maxiter": args.maxiter})
     x = res.x
     phys = np.asarray(LJ.unit_to_physical(jnp.asarray(x[:10])))
     out = {"best": {"x": x[:10].tolist(), "fun": float(res.fun), "certified": bool(cert_fn(jnp.asarray(x)))},
-           "u": x[:10].tolist(), "z": x[10:].tolist(), "start_fun": float(history[0]) if history else None,
+           "u": x[:10].tolist(), "z": x[10 + nt:].tolist(), "start_fun": float(history[0]) if history else None,
            "physical": dict(zip(LJ.GLOBAL_NAMES, phys.tolist())), "spatial_names": setup.spatial,
-           "nuisance": dict(zip(M.NUISANCE, x[10 + setup.d:].tolist())), "subjects": len(data.ids),
+           "nuisance": dict(zip(M.NUISANCE, x[10 + nt + setup.d:].tolist())), "subjects": len(data.ids),
            "emp_dir": args.emp_dir, "lead": args.lead, "message": str(res.message), "nit": int(res.nit)}
+    if nt:
+        out["thal_u"] = x[10:14].tolist()
+        out["thal_physical"] = dict(zip(LJ.THAL_NAMES, np.asarray(LJ.thal_unit_to_physical(jnp.asarray(x[10:14]))).tolist()))
     Path(M.ROOT / args.out).parent.mkdir(parents=True, exist_ok=True)
     M.save_json(M.ROOT / args.out, out)
     print(json.dumps({k: out[k] for k in ("physical", "nuisance", "start_fun")}, indent=1), "final", res.fun)

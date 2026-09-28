@@ -50,9 +50,9 @@ def ds003478_subjects() -> pd.DataFrame:
                                              "mdd_current", "SCID"]]
 
 
-def mumtaz_subjects() -> pd.DataFrame:
+def mumtaz_subjects(condition: str = "EC") -> pd.DataFrame:
     rows = []
-    for f in sorted(MUMTAZ_ROOT.glob("*EC.edf")):
+    for f in sorted(MUMTAZ_ROOT.glob(f"*{condition}.edf")):
         parts = f.stem.split()
         group = "MDD" if parts[0] == "MDD" else "HC"
         rows.append({"subject_id": f"mumtaz_{group}_{parts[1]}", "file": f.name, "group": group})
@@ -75,7 +75,10 @@ def modma_subjects() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # readers
 # ---------------------------------------------------------------------------
-def read_ds003478(participant_id: str, run: int = 1):
+DS003478_CODES = {"EC": (1, 3, 5, 11, 13, 15), "EO": (2, 4, 6, 12, 14, 16)}
+
+
+def read_ds003478(participant_id: str, run: int = 1, condition: str = "EC"):
     import mne
 
     base = DS003478_ROOT / participant_id / "eeg" / f"{participant_id}_task-Rest_run-0{run}_eeg"
@@ -86,17 +89,42 @@ def read_ds003478(participant_id: str, run: int = 1):
     x = raw.get_data(picks=[upper[c.upper()] for c in labels]) * 1e6
     eog = raw.get_data(picks=[upper["VEOG"], upper["HEOG"]]) * 1e6 if {"VEOG", "HEOG"} <= set(upper) else None
     ev = pd.read_csv(str(base).removesuffix("_eeg") + "_events.tsv", sep="\t")
-    # Event values: odd 1/3/5 (every 500 ms) and 11/13/15 (every 2 s) = eyes closed, even = eyes open,
-    # 17 = start/finish.  33 older files carry only these numbers (trial_type "STATUS").
+    # Event values: odd 1/3/5 (every 500 ms) and 11/13/15 (every 2 s) = eyes closed, even 2/4/6 and
+    # 12/14/16 = eyes open, 17 = start/finish.  33 older files carry only these numbers (trial_type "STATUS").
     code = pd.to_numeric(ev["value"], errors="coerce")
-    closed = ev[code.isin([1, 3, 5, 11, 13, 15])].onset.to_numpy(float)
+    marks = ev[code.isin(DS003478_CODES[condition])].onset.to_numpy(float)
     valid = np.zeros(raw.n_times, bool)
-    if len(closed):
-        blocks = np.split(closed, np.flatnonzero(np.diff(closed) > 5.0) + 1)
-        for b in blocks:  # markers run every 0.5-2 s through each eyes-closed minute
+    if len(marks):
+        blocks = np.split(marks, np.flatnonzero(np.diff(marks) > 5.0) + 1)
+        for b in blocks:  # markers run every 0.5-2 s through each one-minute block
             s0, s1 = int((b[0] + 1.0) * fs), int((b[-1] + 1.0) * fs)
             valid[max(s0, 0):min(s1, raw.n_times)] = True
     return x, eog, fs, labels, 60.0, valid, {}
+
+
+DS003474_ROOT = Path("D:/university/projects/mdd-new-datasets/ds003474")
+
+
+def read_ds003474(participant_id: str):
+    """Probabilistic-selection task (same people and IDs as ds003478): continuous EEG plus events.
+
+    Event values: 10-21 training stimulus pairs, 200-229 test pairs, 94 / 104 correct /
+    incorrect feedback (training only), keypad1/keypad2 responses.  Returns the reader
+    tuple with ``meta["events"]`` (onset in s, integer code; non-numeric codes dropped).
+    """
+    import mne
+
+    base = DS003474_ROOT / participant_id / "eeg" / f"{participant_id}_task-ProbabilisticSelection_eeg"
+    raw = mne.io.read_raw_eeglab(str(base) + ".set", preload=True, verbose="ERROR")
+    fs = float(raw.info["sfreq"])
+    upper = {c.upper(): c for c in raw.ch_names}
+    labels = [c for c in EEG_LABELS if c.upper() in upper]
+    x = raw.get_data(picks=[upper[c.upper()] for c in labels]) * 1e6
+    eog = raw.get_data(picks=[upper["VEOG"], upper["HEOG"]]) * 1e6 if {"VEOG", "HEOG"} <= set(upper) else None
+    ev = pd.read_csv(str(base).removesuffix("_eeg") + "_events.tsv", sep="\t")
+    code = pd.to_numeric(ev["value"], errors="coerce")
+    events = pd.DataFrame({"onset": ev.onset.astype(float), "code": code}).dropna().astype({"code": int})
+    return x, eog, fs, labels, 60.0, None, {"events": events.reset_index(drop=True)}
 
 
 def read_mumtaz(filename: str):

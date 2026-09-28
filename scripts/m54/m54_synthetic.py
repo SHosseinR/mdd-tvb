@@ -33,7 +33,7 @@ def wishart(rng, S, dof):
 def generate(args):
     fits = pd.read_csv(M.ROOT / args.fits).set_index("subject_id")
     population = json.loads((M.ROOT / args.population).read_text())
-    M.configure(free_fast=args.free_fast, somot_beta=args.somot_beta)
+    M.configure(free_fast=args.free_fast, somot_beta=args.somot_beta, thalamus=args.thalamus)
     setup = M.make_setup(args.lead, population, use_pop=args.pop_background)
     names = setup.theta_names()
     rng = np.random.default_rng(args.seed)
@@ -115,6 +115,7 @@ def main():
     ap.add_argument("--pop-background", action="store_true")
     ap.add_argument("--free-fast", action="store_true")
     ap.add_argument("--somot-beta", action="store_true")
+    ap.add_argument("--thalamus", choices=["T1", "T2"], default=None)
     args = ap.parse_args()
     generate(args) if args.mode == "generate" else summarise(args)
 

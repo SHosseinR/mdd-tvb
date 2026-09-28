@@ -1,10 +1,11 @@
 """Artefact-aware (v2) cleaning and M5-format cross-spectra for the batch-free datasets.
 
-Output per dataset: ``outputs/preproc_v2/<dataset>_restEC/empirical`` with
+Output per dataset and condition: ``outputs/preproc_v2/<dataset>_rest<EC|EO>/empirical`` with
 fit / validation / reliability collections (26 x 26; channels the dataset lacks
 are zero rows and listed in qc.csv ``missing_channels``), a QC table with the
 subject metadata, repair matrices (26 x 26), and ``configs/m54_lists/<dataset>_restEC_v2.txt``
-plus a 5-fold stratified split file ``configs/splits_<dataset>.csv``.
+plus a 5-fold stratified split file ``configs/splits_<dataset>.csv`` (written for eyes closed only;
+eyes-open fits reuse the eyes-closed folds).  MODMA has no eyes-open recording.
 """
 from __future__ import annotations
 
@@ -27,26 +28,28 @@ from mdd_tvb.spectral_features import (CrossSpectralCollection, estimate_cross_s
 MIN_EPOCHS_PER_HALF = 6
 
 
-def subjects(dataset):
+def subjects(dataset, condition="EC"):
     if dataset == "ds003478":
         return ND.ds003478_subjects()
     if dataset == "mumtaz":
-        return ND.mumtaz_subjects()
+        return ND.mumtaz_subjects(condition)
+    if condition != "EC":
+        raise ValueError("MODMA has eyes-closed rest only")
     return ND.modma_subjects()
 
 
-def read(dataset, row):
+def read(dataset, row, condition="EC"):
     if dataset == "ds003478":
-        return ND.read_ds003478(row["participant_id"])
+        return ND.read_ds003478(row["participant_id"], condition=condition)
     if dataset == "mumtaz":
         return ND.read_mumtaz(row["file"])
     return ND.read_modma(row["participant_id"])
 
 
-def one(dataset, row, settings) -> dict:
+def one(dataset, row, settings, condition="EC") -> dict:
     out = {k: (v.item() if hasattr(v, "item") else v) for k, v in row.items()}
     try:
-        x, eog, fs, labels, line_hz, valid, _ = read(dataset, row)
+        x, eog, fs, labels, line_hz, valid, _ = read(dataset, row, condition)
         res = preprocess_array(x, eog, fs, labels, line_hz=line_hz, valid=valid)
     except Exception as error:  # noqa: BLE001
         return {**out, "status": "failed", "note": repr(error), "trace": traceback.format_exc()[-600:]}
@@ -80,9 +83,9 @@ def one(dataset, row, settings) -> dict:
     return out
 
 
-def write(dataset, rows, settings):
+def write(dataset, rows, settings, condition="EC"):
     rows.sort(key=lambda r: (str(r["group"]), str(r["subject_id"])))
-    out = ROOT / "outputs/preproc_v2" / f"{dataset}_restEC" / "empirical"
+    out = ROOT / "outputs/preproc_v2" / f"{dataset}_rest{condition}" / "empirical"
     out.mkdir(parents=True, exist_ok=True)
     qc = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in rows])
     qc.to_csv(out / "qc.csv", index=False)
@@ -101,7 +104,11 @@ def write(dataset, rows, settings):
                         repair=np.stack([r["_repair"] for r in good]).astype(np.float32))
     usable = qc[qc.status.isin(["ok", "qc_flag"]) & (qc.note.fillna("") != "unrepairable channel neighbourhood")]
     usable = usable[usable.subject_id.isin(ids)]
-    (ROOT / "configs/m54_lists" / f"{dataset}_restEC_v2.txt").write_text("\n".join(sorted(usable.subject_id)) + "\n")
+    (ROOT / "configs/m54_lists" / f"{dataset}_rest{condition}_v2.txt").write_text("\n".join(sorted(usable.subject_id)) + "\n")
+    if condition != "EC":
+        print(f"{dataset} {condition}: {len(good)}/{len(rows)} with spectra, {len(usable)} usable; "
+              f"groups {usable.group.value_counts().to_dict()}", flush=True)
+        return
     # 5-fold stratified split (same layout as configs/m52_nested_splits.csv)
     rng = np.random.default_rng(20260927)
     fold_of = {}
@@ -123,21 +130,23 @@ def main():
     ap.add_argument("--datasets", nargs="+", default=["modma", "mumtaz", "ds003478"])
     ap.add_argument("--n-jobs", type=int, default=6)
     ap.add_argument("--max-subjects", type=int, default=0)
+    ap.add_argument("--condition", choices=["EC", "EO"], default="EC")
     args = ap.parse_args()
     settings = load_spectral_m5_config(ROOT / "configs/m5_spectral.toml").spectral
     for dataset in args.datasets:
-        table = subjects(dataset)
+        table = subjects(dataset, args.condition)
         if args.max_subjects:
             table = table.head(args.max_subjects)
         t0, rows = time.time(), []
         with ProcessPoolExecutor(args.n_jobs) as pool:
-            futures = [pool.submit(one, dataset, row._asdict() if hasattr(row, "_asdict") else dict(row), settings)
+            futures = [pool.submit(one, dataset, row._asdict() if hasattr(row, "_asdict") else dict(row), settings,
+                                   args.condition)
                        for _, row in table.iterrows()]
             for k, fut in enumerate(as_completed(futures), start=1):
                 rows.append(fut.result())
                 if k % 20 == 0 or k == len(futures):
                     print(f"{dataset}: {k}/{len(futures)} {time.time() - t0:.0f}s", flush=True)
-        write(dataset, rows, settings)
+        write(dataset, rows, settings, args.condition)
 
 
 if __name__ == "__main__":

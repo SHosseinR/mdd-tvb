@@ -25,7 +25,9 @@ ROOT = Path(__file__).resolve().parents[2]
 TDBRAIN = Path("D:/university/projects/graph-opt/tbdbrain/TDBRAIN_Dataset_V3_1")
 
 
-def parameter_columns(t):
+def parameter_columns(t, prefix=None):
+    if prefix:  # e.g. "delta_": the eyes-open changes of a joint fit (m54_joint.py)
+        return [(c, f"sd_{c}") for c in t.columns if c.startswith(prefix) and f"sd_{c}" in t.columns]
     base = ["global_coupling", "mu", "a_scale", "b_scale", "vis_time_contrast", "dorsattn_time_contrast",
             "obs_fraction", "obs_exponent", "src_fraction", "src_exponent", "common_share"]
     gains = [c for c in t.columns if c.startswith("gain_") and "Limbic" not in c]
@@ -74,12 +76,13 @@ def main():
     ap.add_argument("--min-kappa", type=float, default=1.0)
     ap.add_argument("--qc", default=None, help="qc.csv with age/sex columns (other datasets); default TDBRAIN table")
     ap.add_argument("--groups", nargs=2, default=["Healthy", "MDD"], help="reference group, case group")
+    ap.add_argument("--prefix", default=None, help="analyse only columns with this prefix (e.g. delta_)")
     args = ap.parse_args()
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
     t1 = pd.read_csv(ROOT / args.first).set_index("subject_id")
     t2 = pd.read_csv(ROOT / args.second).set_index("subject_id") if (ROOT / args.second).is_file() else None
-    cols = parameter_columns(t1)
+    cols = parameter_columns(t1, args.prefix)
     calib = {}
     if t2 is not None:
         common = t1.index.intersection(t2.index)

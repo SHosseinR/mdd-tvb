@@ -19,7 +19,18 @@ kernels = {
     "mddtvb-m54-ds003478": (["newds:bem:m10pop:ds003478", "newdsswap:bem:m10pop:ds003478"], ["shahmadi/mddtvb-m54b-bem"]),
     "mddtvb-m54c-fast": (["reuse:bem:m10popfast", "dev:bem:m10popfast", "synth:bem:m10popfast"],
                          ["shahmadi/mddtvb-m54b-bem"]),
+    # corticothalamic loop: population fit with the loop, T1 / T2 subject fits, synthetic recovery
+    "mddtvb-m54t-thal": (["reuse:bem:m10", "script:bem:m10:scripts/m54/thal_scan.py",
+                          "population:bem:m10popthal1", "dev:bem:m10popthal1", "bank:bem:m10popthal2",
+                          "dev:bem:m10popthal2", "synth:bem:m10popthal1", "synth:bem:m10popthal2"],
+                         ["shahmadi/mddtvb-m54b-bem"]),
+    # joint eyes-closed + eyes-open fits: which parameters change when the eyes open (100 dev subjects)
+    "mddtvb-m54e-joint1": ([f"joint:bem:m10pop:dev:{d}:configs/m54_lists/dev_eoec_compare100.txt"
+                            for d in ("none", "level", "mu", "b_scale", "common")], ["shahmadi/mddtvb-m54b-bem"]),
+    "mddtvb-m54e-joint2": ([f"joint:bem:m10pop:dev:{d}:configs/m54_lists/dev_eoec_compare100.txt"
+                            for d in ("vis", "a_scale", "coupling", "all")], ["shahmadi/mddtvb-m54b-bem"]),
 }
+EO_KERNELS = {"mddtvb-m54t-thal", "mddtvb-m54e-joint1", "mddtvb-m54e-joint2"}  # need shahmadi/mdd-tvb-eo
 only = sys.argv[1:] or list(kernels)
 for slug in only:
     stages, sources = kernels[slug]
@@ -29,7 +40,9 @@ for slug in only:
     json.dump({"id": f"shahmadi/{slug}", "title": slug, "code_file": "kernel.py", "language": "python",
                "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_tpu": False,
                "enable_internet": True, "dataset_sources": ["shahmadi/mdd-tvb-linear-bundle", "shahmadi/mdd-tvb-linear-code",
-                                                            "shahmadi/mdd-tvb-external"],
+                                                            "shahmadi/mdd-tvb-external"]
+               + (["shahmadi/mdd-tvb-eo"] if slug.startswith(("mddtvb-m54e", "mddtvb-m54t", "mddtvb-m54f"))
+                  or slug in EO_KERNELS else []),
                "kernel_sources": sources, "competition_sources": [], "model_sources": [], "machine_shape": "NvidiaTeslaT4"},
               open(folder / "kernel-metadata.json", "w"), indent=1)
     print(slug, stages, sources)
