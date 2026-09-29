@@ -186,8 +186,8 @@ non-replication of EEG predictors of rTMS response.
 | Mumtaz 2016 (19-channel) | 30 MDD, 28 HC | 0.86 (0.29) | 88 % |
 | OpenNeuro ds003478 (Neuroscan 64) | 44 high-BDI, 71 low-BDI students | 0.87 (0.49) | 95 % |
 
-The model generalises, but with more data per subject its structural error dominates: it captures 20–35 % of the
-achievable improvement, against about 50 % in TDBRAIN. Mumtaz's two groups differ in overall power by about 2×,
+The model generalises, but with more data per subject its structural error dominates: it captures 18–26 % of the
+achievable improvement (median over subjects), against 52 % in TDBRAIN. Mumtaz's two groups differ in overall power by about 2×,
 which suggests they were recorded differently. Its large group differences should not be trusted on their own.
 
 ---

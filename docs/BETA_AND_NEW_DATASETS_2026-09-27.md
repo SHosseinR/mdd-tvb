@@ -26,7 +26,7 @@ Two questions from the last round:
    | ds003478 (64-channel Neuroscan) | 0.87 | 95 % |
 
    With longer recordings, however, the ceiling is much lower (0.29–0.49 vs 0.68). The model's structural error
-   then dominates: it captures about 20–35 % of the achievable improvement, against about 50 % in TDBRAIN.
+   then dominates: it captures 18–26 % of the achievable improvement (median over subjects), against 52 % in TDBRAIN.
 3. **No model parameter separates depressed from control subjects consistently across datasets.**
    - The strongest candidate, the inhibitory time scale, is highly heterogeneous across datasets (I² = 0.82): +1.23 SD
      in Mumtaz, +0.48 in ds003478, −0.01 in MODMA, +0.04 in TDBRAIN batch-matched.
