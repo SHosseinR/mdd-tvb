@@ -4,9 +4,11 @@ In the linear regime the network that shapes the resting spectrum also shapes th
 response to a brief input: the evoked potential is the impulse response
 T(w) U(w) of the same transfer function (linear_jax.network_sensor_transfer; an
 input enters a region like the mean drive, alpha and fast generators 1 : 0.85).
-Inputs are alpha-function pulses u(t) = ((t - t0)/tau) exp(1 - (t - t0)/tau):
-  * stimulus-locked:  visual input to all visual-network regions (amplitude, t0, tau);
-  * feedback-locked:  visual input (shared by correct / incorrect feedback) plus a
+Inputs are alpha-function pulses u(t) = ((t - t0)/tau) exp(1 - (t - t0)/tau) whose
+spatial pattern is free over the 14 network x hemisphere groups (evoked potentials
+depend on source orientation; a fixed-sign input to whole networks fits ~nothing):
+  * stimulus-locked:  an early and a late input;
+  * feedback-locked:  an early input (shared by correct / incorrect feedback) plus a
     medial-frontal input (cingulate / medial prefrontal parcels) with its own
     amplitude for correct and for incorrect feedback (the reward positivity).
 Latency and width by grid search, amplitudes by least squares (variable
