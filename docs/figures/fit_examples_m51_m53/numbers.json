@@ -1,0 +1,92 @@
+{
+ "example_subjects": {
+  "sub-88071409": {
+   "label": "better fit (10th percentile)",
+   "group": "MDD",
+   "m53_spectrum_ratio": 0.9174035031929496
+  },
+  "sub-87964761": {
+   "label": "typical fit (median)",
+   "group": "Healthy",
+   "m53_spectrum_ratio": 1.733068049154815
+  },
+  "sub-88064837": {
+   "label": "harder fit (90th percentile)",
+   "group": "MDD",
+   "m53_spectrum_ratio": 3.424719697170228
+  }
+ },
+ "occipital_alpha_peak": {
+  "dev|M5.1": {
+   "peak_height_ratio_median": 0.6755750906635845,
+   "fraction_peak_below_half": 0.30916030534351147,
+   "n": 262
+  },
+  "dev|M5.3": {
+   "peak_height_ratio_median": 0.736407074362462,
+   "fraction_peak_below_half": 0.25190839694656486,
+   "n": 262
+  },
+  "ext|M5.1": {
+   "peak_height_ratio_median": 0.6532583031471244,
+   "fraction_peak_below_half": 0.29878048780487804,
+   "n": 164
+  },
+  "ext|M5.3": {
+   "peak_height_ratio_median": 0.7774163890391095,
+   "fraction_peak_below_half": 0.17073170731707318,
+   "n": 164
+  }
+ },
+ "group_spectra_log_shape_r": {
+  "dev|occipital|M5.1": 0.9708288776600523,
+  "dev|occipital|M5.3": 0.9806408986903369,
+  "dev|frontal|M5.1": 0.9456183048257232,
+  "dev|frontal|M5.3": 0.9477458053798534,
+  "ext|occipital|M5.1": 0.96915709177768,
+  "ext|occipital|M5.3": 0.9822103658948906,
+  "ext|frontal|M5.1": 0.9594499491587779,
+  "ext|frontal|M5.3": 0.9642072868874858
+ },
+ "topomap_r_alpha": {
+  "M5.1|Group mean": 0.862229606075079,
+  "M5.1|Better fit": 0.8457069406496714,
+  "M5.1|Typical fit": 0.6550931407073457,
+  "M5.1|Harder fit": 0.8435941129854329,
+  "M5.3|Group mean": 0.8809677890374578,
+  "M5.3|Better fit": 0.8730925652338084,
+  "M5.3|Typical fit": 0.6650763135090725,
+  "M5.3|Harder fit": 0.8084241473101674,
+  "M5.1|median over subjects": 0.7300314034201996,
+  "M5.3|median over subjects": 0.7385778734441262
+ },
+ "coherence_vs_measured": {
+  "alpha 8\u201312 Hz|M5.1": {
+   "rmse_vs_measured": 0.3778370804168975,
+   "r_vs_measured": 0.8546269371486176
+  },
+  "alpha 8\u201312 Hz|M5.3": {
+   "rmse_vs_measured": 0.3168935532116429,
+   "r_vs_measured": 0.8755359898834753
+  },
+  "beta 13\u201319 Hz|M5.1": {
+   "rmse_vs_measured": 0.35674550068347843,
+   "r_vs_measured": 0.8703027085946737
+  },
+  "beta 13\u201319 Hz|M5.3": {
+   "rmse_vs_measured": 0.2803976074409738,
+   "r_vs_measured": 0.8406094399691778
+  }
+ },
+ "traces": {
+  "subject": "sub-87964761",
+  "group": "Healthy",
+  "real_rms_uv": 4.517839633317119,
+  "m51_rms_uv": 5.504515793882067,
+  "m53_rms_uv": 4.728084831952149,
+  "m51_candidate": {
+   "subject": "sub-87964761",
+   "map_candidate_index": 1755
+  }
+ }
+}
