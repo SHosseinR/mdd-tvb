@@ -81,6 +81,7 @@ def main() -> None:
     ap.add_argument("--emp-ec", required=True)
     ap.add_argument("--emp-eo", required=True)
     ap.add_argument("--subjects-file", default=None, help="subjects (only those with both recordings are fitted)")
+    ap.add_argument("--eo-subjects-file", default=None, help="usable eyes-open recordings (QC list)")
     ap.add_argument("--splits", default="configs/m52_nested_splits.csv")
     ap.add_argument("--null-ec", default=None, help="external mode: development eyes-closed collection for the null")
     ap.add_argument("--null-eo", default=None, help="external mode: development eyes-open collection for the null")
@@ -112,7 +113,8 @@ def main() -> None:
 
     only = Path(M.ROOT / args.subjects_file).read_text().split() if args.subjects_file else None
     ec = M.load_subjects(args.emp_ec, only)
-    eo = M.load_subjects(args.emp_eo, [s for s in ec.ids])
+    eo_ok = set(Path(M.ROOT / args.eo_subjects_file).read_text().split()) if args.eo_subjects_file else None
+    eo = M.load_subjects(args.emp_eo, [s for s in ec.ids if eo_ok is None or s in eo_ok])
     both = [s for s in ec.ids if s in set(eo.ids)]
     ec = M.load_subjects(args.emp_ec, both)
     eo = M.load_subjects(args.emp_eo, both)
@@ -189,7 +191,14 @@ def main() -> None:
         S1, S2, _, _ = models(phi_ext[:-1], B1, B2)
         return W.project_model(jnp.concatenate([S1, S2]) * jnp.exp(phi_ext[-1]), A, pad)
 
-    jac = jax.jit(jax.jacfwd(observed))
+    jvp_one = jax.jit(jax.vmap(lambda e, v, A, pad, B1, B2: jax.jvp(lambda x: observed(x, A, pad, B1, B2), (e,), (v,))[1],
+                               in_axes=(None, 0, None, None, None, None)))
+
+    def jac(e, A, pad, B1, B2, chunk=8):
+        """Jacobian (F, 25, 25, P) by forward-mode products in chunks (memory-light for many parameters)."""
+        eye = jnp.eye(e.shape[0])
+        cols = [jvp_one(e, eye[i:i + chunk], A, pad, B1, B2) for i in range(0, e.shape[0], chunk)]
+        return jnp.moveaxis(jnp.concatenate(cols), 0, -1)
     freq_np = np.asarray(setup.freq)
     F = len(freq_np)
     rows, preds = [], {}

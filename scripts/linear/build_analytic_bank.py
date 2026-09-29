@@ -91,7 +91,8 @@ def main() -> None:
         C, common, psi = LJ.contributions_with_common_drive(
             p, static, lead, LJ.delays_for_speed(static, speed), origin, args.common_speed)
         absc = LJ.node_abscissa_per_s(p, psi)
-        sg = LJ.small_gain(p, psi, jnp.asarray(static.fine_frequency_hz))
+        grid = jnp.arange(0.05, 150.0, 0.1) if thal is not None else jnp.asarray(static.fine_frequency_hz)
+        sg = LJ.small_gain(p, psi, grid)  # the loop is strongest below the fitted grid: check all frequencies
         loop_ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
         sg = jnp.where(loop_ok & (dist > 0.05), sg, jnp.inf)  # an unstable own loop fails certification
         resid = jnp.max(jnp.abs(psi - LJ._psi_map(psi, p)))

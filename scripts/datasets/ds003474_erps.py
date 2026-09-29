@@ -42,6 +42,19 @@ def subjects():
     return t
 
 
+def one_cached(row):
+    """Per-subject results are cached (pickle), so a rerun only redoes failed subjects."""
+    import pickle
+    cache = OUT / "cache" / f"{row['subject_id']}.pkl"
+    if cache.is_file():
+        return pickle.loads(cache.read_bytes())
+    res = one(row)
+    if res.get("status") not in ("failed",):
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(pickle.dumps(res))
+    return res
+
+
 def one(row):
     pid = row["participant_id"]
     out = {"subject_id": row["subject_id"], "participant_id": pid, "group": row["group"], "bdi": row["BDI"]}
@@ -109,7 +122,7 @@ def main():
         table = table.head(args.max_subjects)
     rows, t0 = [], time.time()
     with ProcessPoolExecutor(args.n_jobs) as pool:
-        futures = [pool.submit(one, r) for r in table.to_dict("records")]
+        futures = [pool.submit(one_cached, r) for r in table.to_dict("records")]
         for k, fut in enumerate(as_completed(futures), start=1):
             rows.append(fut.result())
             if k % 10 == 0 or k == len(futures):

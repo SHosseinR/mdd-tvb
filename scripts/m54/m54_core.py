@@ -49,6 +49,7 @@ THAL_FREE = {"T1": ("thal_gain", "thal_gamma"), "T2": ("thal_gain", "thal_gamma"
 # Starting loop (physical): moderate relay gain, reticular path half as strong, 80 ms round trip.
 THAL_START = (30.0, 0.5, 80.0, 0.3)
 EXTRA_NAMES: tuple = ()  # per-subject parameters appended at the end of theta (fitted in the refinement)
+WIDE_GRID = jnp.arange(0.05, 150.0, 0.1)  # Hz, certification grid when the thalamic loop is on
 
 
 def configure(free_fast: bool = False, somot_beta: bool = False, thalamus: str | None = None) -> None:
@@ -247,7 +248,10 @@ def extra_init(setup: Setup):
 def stability(setup: Setup, p, psi):
     absc = LJ.node_abscissa_per_s(p, psi)
     margin = LJ.fold_margin(p, psi)
-    sg = LJ.small_gain(p, psi, jnp.asarray(setup.static.fine_frequency_hz))
+    # with the loop on, the small-gain bound must hold at all frequencies (the loop is strongest
+    # near 0 Hz, below the fitted 2-40 Hz grid); without it the historical fitted-grid check is kept
+    grid = WIDE_GRID if THALAMUS else jnp.asarray(setup.static.fine_frequency_hz)
+    sg = LJ.small_gain(p, psi, grid)
     penalty = (jnp.mean(jax.nn.relu(absc + 2.0) ** 2) * 1e-2 + jnp.mean(jax.nn.relu(0.4 - margin) ** 2) * 10.0
                + jax.nn.relu(sg - 0.9) ** 2 * 10.0)
     certified = (jnp.max(absc) < -1.0) & (jnp.min(margin) > 0.3) & (sg < 1.0)

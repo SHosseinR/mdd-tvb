@@ -40,6 +40,7 @@ extract("mddtvb_external.tar.gz", ["outputs/external", "outputs/preproc_v2", "co
 # eyes-open spectra, updated subject lists and ERPs (optional dataset shahmadi/mdd-tvb-eo)
 extract("mddtvb_eo.tar.gz", ["outputs/preproc_v2/dev_restEO", "outputs/preproc_v2/rtms_restEO",
                              "outputs/preproc_v2/ds003478_restEO", "outputs/preproc_v2/mumtaz_restEO",
+                             "outputs/preproc_v2/controls_restEO", "outputs/preproc_v2/smc_restEO",
                              "configs/m54_lists", "outputs/erp"], "tvb-eo")
 for need in ("scripts/m54/m54_fit.py", "configs/m53_frozen/population_fit_tvb.json",
              "outputs/preproc_v2/dev_restEC/empirical/cross_spectra_fit.npz", "configs/m54_lists/dev_restEC_v2.txt"):
@@ -228,7 +229,9 @@ for stage in STAGES:
         subj = parts[5] if len(parts) > 5 else f"{LISTS}/{cohort}_restEC_v2.txt"
         extra = ["--emp-ec", f"{V2}/{cohort}_restEC/empirical", "--emp-eo", f"{V2}/{cohort}_restEO/empirical",
                  "--subjects-file", subj, "--delta", delta]
-        if cohort == "rtms":
+        if (work / f"{LISTS}/{cohort}_restEO_v2.txt").exists():
+            extra += ["--eo-subjects-file", f"{LISTS}/{cohort}_restEO_v2.txt"]
+        if cohort in ("rtms", "controls", "smc"):  # TDBRAIN cohorts outside the development set: development nulls
             extra += ["--null-ec", f"{V2}/dev_restEC/empirical", "--null-eo", f"{V2}/dev_restEO/empirical",
                       "--dev-subjects-file", f"{LISTS}/dev_restEC_v2.txt"]
         elif cohort != "dev":

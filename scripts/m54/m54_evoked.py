@@ -35,9 +35,11 @@ from m54_core import jax, jnp, LJ  # noqa: E402
 T_WIN, DT = 2.0, 0.01          # FFT window (s) and ERP sampling step (s)
 FIT_WINDOW = (0.0, 0.6)
 LOWPASS_HZ = 30.0
+HIGHPASS_HZ = 0.5
 FAST_INPUT = 0.85              # like the mean drive (linear_jax FAST_DRIVE_RATIO)
-V_GRID = [(t0, tau) for t0 in np.arange(0.03, 0.16, 0.01) for tau in (0.01, 0.02, 0.04, 0.07)]
-F_GRID = [(t0, tau) for t0 in np.arange(0.10, 0.36, 0.02) for tau in (0.02, 0.04, 0.07, 0.1)]
+E_GRID = [(t0, tau) for t0 in np.arange(0.03, 0.16, 0.02) for tau in (0.02, 0.05, 0.1, 0.2)]   # early inputs
+L_GRID = [(t0, tau) for t0 in np.arange(0.15, 0.41, 0.02) for tau in (0.02, 0.05, 0.1, 0.2)]   # late (stimulus)
+F_GRID = [(t0, tau) for t0 in np.arange(0.10, 0.36, 0.02) for tau in (0.02, 0.05, 0.1, 0.2)]   # medial frontal
 
 
 def target_sets(static):
@@ -111,7 +113,11 @@ def main():
     print(f"subjects with rest fit and enough trials: {len(use)}", flush=True)
     freqs = np.arange(0.0, 0.5 / DT + 1e-9, 1.0 / T_WIN)          # 0 .. 50 Hz, 0.5 Hz steps
     omega_s = 2 * np.pi * freqs
-    lp = 1.0 / (1.0 + (freqs / LOWPASS_HZ) ** 8)                  # |H|^2 of a 4th-order Butterworth (filtfilt)
+    # the data were high-passed at 0.5 Hz (cleaning) and low-passed at 30 Hz (ERP), both 4th-order
+    # Butterworth applied forward and backward: |H|^2 for each, zero phase
+    with np.errstate(divide="ignore"):
+        hp = np.where(freqs > 0, 1.0 / (1.0 + (HIGHPASS_HZ / np.maximum(freqs, 1e-12)) ** 8), 0.0)
+    lp = hp / (1.0 + (freqs / LOWPASS_HZ) ** 8)
     n_t = int(round(T_WIN / DT))
     tsel = (times >= FIT_WINDOW[0] - 1e-9) & (times <= FIT_WINDOW[1] + 1e-9)
     t_idx = np.round(times[tsel] / DT).astype(int)                 # model samples at t >= 0
@@ -129,52 +135,70 @@ def main():
         row = fits.loc[sid]
         return np.asarray(M.full_u(setup, jnp.asarray([row[n] for n in M.FREE_GLOBALS])))
 
-    def basis(Tn, weights, grid):
-        """Sensor waveforms (len(grid), 26, n_t_fit) for unit-amplitude input into the weighted regions."""
-        tr = np.einsum("fcn,n->fc", Tn, weights / weights.sum())
+    group_of = np.asarray(static.contribution_index)
+    n_groups = int(group_of.max()) + 1
+    Gm = np.zeros((len(group_of), n_groups))
+    Gm[np.arange(len(group_of)), group_of] = 1.0
+    Gm /= Gm.sum(0, keepdims=True)                                # unit input spread over each group
+
+    def waves(tr, grid):
+        """(len(grid), k, 26, T) sensor waveforms for unit alpha-pulse inputs through transfers tr (F, k, 26)."""
         out = []
         for t0, tau in grid:
-            spec = tr * (alpha_pulse_spectrum(omega_s, t0, tau) * lp)[:, None]
-            wave = np.fft.irfft(spec, n=n_t, axis=0) / DT          # continuous-time inverse transform
-            out.append(wave[t_idx].T)
+            spec = tr * (alpha_pulse_spectrum(omega_s, t0, tau) * lp)[:, None, None]
+            w = np.fft.irfft(spec, n=n_t, axis=0) / DT              # continuous-time inverse transform
+            out.append(np.moveaxis(w[t_idx], 0, -1))
         return np.stack(out)
 
+    def lsq(X, y):
+        a, *_ = np.linalg.lstsq(X, y, rcond=None)
+        return a, float(np.sum((y - X @ a) ** 2))
+
     def fit_condition_set(Tn, Wh, data_odd, data_even, which):
-        """Best grid inputs on the odd averages; returns (sse_even, ss_even, params)."""
+        """Grid latencies/widths, least-squares amplitudes on the odd averages; score on the even ones.
+
+        Each input's spatial pattern is free across the 14 network x hemisphere groups (evoked
+        potentials depend on source orientation, so a fixed-sign input to a whole network is too
+        rigid); its time course is set by the person's resting network.
+        stim:     early input (groups) + late input (groups).
+        feedback: early input (groups, shared by correct/incorrect) + a medial-frontal input with
+                  its own amplitude for correct and for incorrect feedback.
+        """
+        trg = np.einsum("fcn,ng->fgc", Tn, Gm)
+        W = lambda b: np.einsum("rc,...ct->...rt", Wh, b)  # noqa: E731
         if which == "stim":
-            Bv = basis(Tn, vis, V_GRID)
+            Be = W(waves(trg, E_GRID)).reshape(len(E_GRID), n_groups, -1)
+            Bl = W(waves(trg, L_GRID)).reshape(len(L_GRID), n_groups, -1)
+            y = (Wh @ data_odd[0]).ravel()
             best = None
-            for g, b in enumerate(Bv):
-                X = (Wh @ b).ravel()[:, None]
-                y = (Wh @ data_odd[0]).ravel()
-                a, *_ = np.linalg.lstsq(X, y, rcond=None)
-                sse = np.sum((y - X @ a) ** 2)
-                if best is None or sse < best[0]:
-                    best = (sse, g, a)
-            _, g, a = best
-            pred = a[0] * Bv[g]
-            ye = Wh @ data_even[0]
-            return float(np.sum((ye - Wh @ pred) ** 2)), float(np.sum(ye ** 2)), \
-                {"stim_amp": float(a[0]), "stim_t0": V_GRID[g][0], "stim_tau": V_GRID[g][1]}
-        # feedback: shared visual input + condition-specific medial-frontal amplitudes
-        Bv, Bf = basis(Tn, vis, V_GRID), basis(Tn, med, F_GRID)
+            for ge in range(len(E_GRID)):
+                for gl in range(len(L_GRID)):
+                    X = np.concatenate([Be[ge], Bl[gl]]).T
+                    a, sse = lsq(X, y)
+                    if best is None or sse < best[0]:
+                        best = (sse, ge, gl, a, X)
+            _, ge, gl, a, _ = best
+            Xe = np.concatenate([Be[ge], Bl[gl]]).T
+            ye = (Wh @ data_even[0]).ravel()
+            return float(np.sum((ye - Xe @ a) ** 2)), float(np.sum(ye ** 2)),                 {"stim_early_t0": E_GRID[ge][0], "stim_early_tau": E_GRID[ge][1],
+                 "stim_late_t0": L_GRID[gl][0], "stim_late_tau": L_GRID[gl][1]}
+        Be = W(waves(trg, E_GRID)).reshape(len(E_GRID), n_groups, -1)
+        trm = np.einsum("fcn,n->fc", Tn, med / med.sum())[:, None, :]
+        Bf = W(waves(trm, F_GRID)).reshape(len(F_GRID), -1)
         y = np.concatenate([(Wh @ d).ravel() for d in data_odd])
         ye = np.concatenate([(Wh @ d).ravel() for d in data_even])
         best = None
-        for gv, bv in enumerate(Bv):
-            v = (Wh @ bv).ravel()
-            for gf, bf in enumerate(Bf):
-                f = (Wh @ bf).ravel()
-                z = np.zeros_like(f)
-                X = np.column_stack([np.concatenate([v, v]), np.concatenate([f, z]), np.concatenate([z, f])])
-                a, *_ = np.linalg.lstsq(X, y, rcond=None)
-                sse = np.sum((y - X @ a) ** 2)
+        for ge in range(len(E_GRID)):
+            early = np.concatenate([Be[ge], Be[ge]], axis=1)            # shared by both conditions
+            for gf in range(len(F_GRID)):
+                z = np.zeros_like(Bf[gf])
+                X = np.concatenate([early, np.concatenate([Bf[gf], z])[None], np.concatenate([z, Bf[gf]])[None]]).T
+                a, sse = lsq(X, y)
                 if best is None or sse < best[0]:
-                    best = (sse, gv, gf, a, X)
-        _, gv, gf, a, X = best
-        return float(np.sum((ye - X @ a) ** 2)), float(np.sum(ye ** 2)), \
-            {"fb_visual_amp": float(a[0]), "fb_frontal_amp_correct": float(a[1]), "fb_frontal_amp_incorrect": float(a[2]),
-             "fb_visual_t0": V_GRID[gv][0], "fb_visual_tau": V_GRID[gv][1], "fb_frontal_t0": F_GRID[gf][0],
+                    best = (sse, ge, gf, a, X)
+        _, ge, gf, a, X = best
+        return float(np.sum((ye - X @ a) ** 2)), float(np.sum(ye ** 2)),             {"fb_frontal_amp_correct": float(a[-2]), "fb_frontal_amp_incorrect": float(a[-1]),
+             "fb_early_t0": E_GRID[ge][0], "fb_early_tau": E_GRID[ge][1], "fb_frontal_t0": F_GRID[gf][0],
              "fb_frontal_tau": F_GRID[gf][1]}
 
     rng = np.random.default_rng(7)

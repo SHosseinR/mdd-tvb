@@ -29,6 +29,20 @@ kernels = {
                             for d in ("none", "level", "mu", "b_scale", "common")], ["shahmadi/mddtvb-m54b-bem"]),
     "mddtvb-m54e-joint2": ([f"joint:bem:m10pop:dev:{d}:configs/m54_lists/dev_eoec_compare100.txt"
                             for d in ("vis", "a_scale", "coupling", "all")], ["shahmadi/mddtvb-m54b-bem"]),
+    # production joint fits with the best mechanism (visual-network drive changes with eyes open)
+    "mddtvb-m54e-joint3a": (["joint:bem:m10pop:dev:vis:configs/m54_lists/dev_eoec_v2.txt",
+                             "jointswap:bem:m10pop:dev:vis:configs/m54_lists/dev_eoec_v2.txt",
+                             "joint:bem:m10pop:rtms:vis", "joint:bem:m10pop:controls:vis", "joint:bem:m10pop:smc:vis"],
+                            ["shahmadi/mddtvb-m54b-bem"]),
+    # T2 thalamus (per-subject loop delay) with wide-band certification, on every cohort (replication)
+    "mddtvb-m54t-thal2": (["reuse:bem:m10popthal2", "dev:bem:m10popthal2", "devswap:bem:m10popthal2",
+                           "ext:bem:m10popthal2", "ctrl:bem:m10popthal2", "ctrl:bem:m10popthal2:smc",
+                           "newds:bem:m10popthal2:modma", "newds:bem:m10popthal2:mumtaz",
+                           "newds:bem:m10popthal2:ds003478"], ["shahmadi/mddtvb-m54t-thal"]),
+    "mddtvb-m54e-joint3b": (["joint:bem:m10pop:ds003478:vis", "jointswap:bem:m10pop:ds003478:vis",
+                             "joint:bem:m10pop:mumtaz:vis", "jointswap:bem:m10pop:mumtaz:vis",
+                             "joint:bem:m10pop:dev:all:configs/m54_lists/dev_eoec_compare100.txt"],
+                            ["shahmadi/mddtvb-m54b-bem"]),
 }
 EO_KERNELS = {"mddtvb-m54t-thal", "mddtvb-m54e-joint1", "mddtvb-m54e-joint2"}  # need shahmadi/mdd-tvb-eo
 only = sys.argv[1:] or list(kernels)
