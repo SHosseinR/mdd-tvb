@@ -95,7 +95,7 @@ def main() -> None:
     ap.add_argument("--swap-halves", action="store_true")
     ap.add_argument("--modes", type=int, default=10)
     ap.add_argument("--pop-background", action="store_true")
-    ap.add_argument("--thalamus", choices=["T1", "T2"], default=None)
+    ap.add_argument("--thalamus", choices=["T1", "T2", "S1", "S2"], default=None)
     ap.add_argument("--max-subjects", type=int, default=0)
     ap.add_argument("--max-residual", type=float, default=1e-4)
     args = ap.parse_args()

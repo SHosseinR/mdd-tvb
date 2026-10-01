@@ -39,6 +39,10 @@ kernels = {
                            "ext:bem:m10popthal2", "ctrl:bem:m10popthal2", "ctrl:bem:m10popthal2:smc",
                            "newds:bem:m10popthal2:modma", "newds:bem:m10popthal2:mumtaz",
                            "newds:bem:m10popthal2:ds003478"], ["shahmadi/mddtvb-m54t-thal"]),
+    # shared thalamic nuclei: population fit (matrix share), S1 / S2 subject fits, recovery
+    "mddtvb-m54s-shared": (["script:bem:m10:scripts/m54/winding_check.py",
+                            "population:bem:m10popthalS1", "dev:bem:m10popthalS1", "bank:bem:m10popthalS2",
+                            "dev:bem:m10popthalS2", "synth:bem:m10popthalS2"], ["shahmadi/mddtvb-m54t-thal2"]),
     "mddtvb-m54e-joint3b": (["joint:bem:m10pop:ds003478:vis", "jointswap:bem:m10pop:ds003478:vis",
                              "joint:bem:m10pop:mumtaz:vis", "jointswap:bem:m10pop:mumtaz:vis",
                              "joint:bem:m10pop:dev:all:configs/m54_lists/dev_eoec_compare100.txt"],

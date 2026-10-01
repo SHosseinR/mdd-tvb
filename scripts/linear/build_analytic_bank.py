@@ -42,6 +42,8 @@ def main() -> None:
                     help="global parameter names held at the population value in every state")
     ap.add_argument("--thalamus", action="store_true",
                     help="every state carries the population's corticothalamic loop (population 'thal_u')")
+    ap.add_argument("--shared-thalamus", action="store_true",
+                    help="shared nuclei (population 'thal_shared_u'); certified by the exact network winding")
     args = ap.parse_args()
     cfg = load_spectral_m5_config(ROOT / "configs/m5_spectral.toml")
     lin = CandidateLinearizer(cfg)
@@ -88,13 +90,21 @@ def main() -> None:
         p, speed = LJ.build_state(phys, static)
         if thal is not None:
             p = LJ.with_thalamus(p, thal)
+        if args.shared_thalamus:
+            p = dict(p, thal_P=LJ.shared_thalamus_matrix(static.contribution_index,
+                                                         jax.nn.sigmoid(pop_all["thal_shared_u"])))
         C, common, psi = LJ.contributions_with_common_drive(
             p, static, lead, LJ.delays_for_speed(static, speed), origin, args.common_speed)
         absc = LJ.node_abscissa_per_s(p, psi)
         grid = jnp.arange(0.05, 150.0, 0.1) if thal is not None else jnp.asarray(static.fine_frequency_hz)
         sg = LJ.small_gain(p, psi, grid)  # the loop is strongest below the fitted grid: check all frequencies
-        loop_ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
-        sg = jnp.where(loop_ok & (dist > 0.05), sg, jnp.inf)  # an unstable own loop fails certification
+        if args.shared_thalamus:  # exact whole-network test; report the cortical small gain
+            ok, _ = LJ.network_winding(p, psi, LJ.delays_for_speed(static, speed))
+            p_ctx = {k: v for k, v in p.items() if not k.startswith("thal_")}
+            sg = jnp.where(ok, jnp.minimum(LJ.small_gain(p_ctx, psi, grid), 0.99), jnp.inf)
+        else:
+            loop_ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
+            sg = jnp.where(loop_ok & (dist > 0.05), sg, jnp.inf)  # an unstable own loop fails certification
         resid = jnp.max(jnp.abs(psi - LJ._psi_map(psi, p)))
         margin = jnp.min(LJ.fold_margin(p, psi))
         return C, common, phys, jnp.max(absc), sg, resid, margin

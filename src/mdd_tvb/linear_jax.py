@@ -253,6 +253,60 @@ def thalamic_loop(p, omega, n):
     return jnp.broadcast_to(theta, (omega.shape[0], n))
 
 
+def shared_thalamus_matrix(group_index, matrix_share):
+    """Cortex -> thalamus -> cortex mixing matrix of shared nuclei, P = (1 - m) P_core + m P_matrix.
+
+    Core: one nucleus per group (network x hemisphere); it receives the mean output of its
+    regions and returns the same signal to all of them (block averaging projector).
+    Matrix: one diffusely projecting population that averages and returns to every region.
+    Both are orthogonal projectors, so ||P||_2 <= 1; P = I would be the private loops.
+    """
+    g = np.asarray(group_index)
+    member = (g[:, None] == np.arange(g.max() + 1)[None]).astype(float)       # (n, K)
+    core = member @ (member / member.sum(0, keepdims=True)).T                    # block means
+    n = len(g)
+    return (1.0 - matrix_share) * jnp.asarray(core) + matrix_share * jnp.full((n, n), 1.0 / n)
+
+
+def network_winding(p, psi, delays_ms, frequency_max_hz: float = 150.0, step_hz: float = 0.02,
+                    chunk: int = 500, max_step_rad: float = 1.0):
+    """Exact stability test of the whole delayed network (argument principle).
+
+    det(I - diag(h(iw)) K(iw)) along 0..f_max: with stable nodes the number of
+    right-half-plane roots is the winding number of this curve (the conjugate half
+    doubles it), which must be zero, and det must be real-positive at w = 0.
+    Needed when thalamic nuclei are shared, where the per-region factorisation used
+    by ``thalamic_certificate`` no longer applies.
+
+    The determinant's phase is a sum over ~200 regional phases and can move fast:
+    on a 0.1 Hz grid a stable state was counted as unstable (aliasing).  The grid is
+    therefore 0.02 Hz (evaluated in chunks), and any step whose phase change exceeds
+    ``max_step_rad`` makes the count ambiguous, which is treated as NOT certified.
+    Returns (ok, winding).
+    """
+    n = p["a"].shape[0]
+    nf = int(np.ceil(frequency_max_hz / step_hz / chunk)) * chunk
+    f = jnp.arange(nf) * step_hz
+    theta_on = "thal_gain" in p
+
+    def phase(fc):
+        omega = 2.0 * jnp.pi * fc / 1000.0
+        h = long_range_response(p, psi, 1j * omega)
+        K = p["G"] * p["W"][None] * jnp.exp(-1j * omega[:, None, None] * delays_ms[None])
+        if theta_on:
+            theta = thalamic_loop(p, omega, n)
+            K = K + (theta[:, :1, None] * p["thal_P"][None] if "thal_P" in p else theta[:, :, None] * jnp.eye(n)[None])
+        sign, _ = jnp.linalg.slogdet(jnp.eye(n)[None] - h[:, :, None] * K)
+        return sign
+
+    sign = jax.lax.map(phase, f.reshape(-1, chunk)).reshape(-1)
+    ang = jnp.angle(sign)
+    d = (jnp.diff(ang) + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
+    winding = jnp.round(2.0 * jnp.sum(d) / (2.0 * jnp.pi))
+    clear = jnp.max(jnp.abs(d)) < max_step_rad
+    return (winding == 0) & clear & (jnp.real(sign[0]) > 0) & (jnp.abs(jnp.imag(sign[0])) < 1e-3), winding
+
+
 def long_range_response(p, psi, s):
     """h(iw): (F, n) rate response of each node to its long-range input."""
     n = p["a"].shape[0]
@@ -309,7 +363,9 @@ def network_sensor_transfer(p, lead, delays_ms, fine_hz):
     pn = jnp.einsum("ni,fnij->fnj", observable, resp_n)
     kernel = p["G"] * p["W"][None] * jnp.exp(-1j * omega[:, None, None] * delays_ms[None])
     theta = thalamic_loop(p, omega, n)
-    if theta is not None:  # each region's own corticothalamic loop: a delayed self-connection
+    if theta is not None and "thal_P" in p:  # shared nuclei: theta (global) times the mixing matrix
+        kernel = kernel + theta[:, :1, None] * p["thal_P"][None]
+    elif theta is not None:  # each region's own corticothalamic loop: a delayed self-connection
         kernel = kernel + theta[:, :, None] * jnp.eye(n)[None]
     system = jnp.eye(n)[None] - h[:, :, None] * kernel
     y = lead[None] * q[:, None, :]  # (F, C, n): L diag(q)
@@ -621,9 +677,13 @@ def small_gain(p, psi, fine_hz):
     omega = 2.0 * jnp.pi * fine_hz / 1000.0
     h = long_range_response(p, psi, 1j * omega)
     theta = thalamic_loop(p, omega, n)
+    norm_w = jnp.linalg.norm(p["W"], ord=2)
+    if theta is not None and "thal_P" in p:
+        # shared nuclei: ||G W e^{-iwD} + theta P|| <= G ||W|| + |theta| (||P|| <= 1); conservative,
+        # reported only -- certification uses network_winding
+        return jnp.max(jnp.abs(h) * (p["G"] * norm_w + jnp.abs(theta[:, :1])))
     if theta is not None:
         h = h / (1.0 - h * theta)
-    norm_w = jnp.linalg.norm(p["W"], ord=2)
     return jnp.max(jnp.abs(h)) * p["G"] * norm_w
 
 

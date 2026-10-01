@@ -44,8 +44,11 @@ FREE_INDEX = np.asarray([LJ.GLOBAL_NAMES.index(n) for n in FREE_GLOBALS])
 
 SOMOT_BETA = False  # sensorimotor-specific fast (beta) generator, see configure()
 SOMOT_NAMES = ("somot_fast_ratio", "somot_fast_fraction")
-THALAMUS = None     # corticothalamic loop variant: None, "T1" or "T2" (see configure())
+THALAMUS = None     # corticothalamic loop variant: None, "T1", "T2", "S1" or "S2" (see configure())
 THAL_FREE = {"T1": ("thal_gain", "thal_gamma"), "T2": ("thal_gain", "thal_gamma", "thal_t0_ms")}
+THAL_FREE.update({"S1": THAL_FREE["T1"], "S2": THAL_FREE["T2"]})
+SHARED = False      # shared thalamic nuclei (S variants) instead of one private loop per region
+MATRIX_SHARE_START = 0.3  # starting share of the diffusely projecting (matrix) population
 # Starting loop (physical): moderate relay gain, reticular path half as strong, 80 ms round trip.
 THAL_START = (30.0, 0.5, 80.0, 0.3)
 EXTRA_NAMES: tuple = ()  # per-subject parameters appended at the end of theta (fitted in the refinement)
@@ -65,14 +68,18 @@ def configure(free_fast: bool = False, somot_beta: bool = False, thalamus: str |
     the loop gains with the cortical time constants free and the delay fixed, "T2"
     frees the gains and the delay with the cortical time constants fixed at the
     population values (the two ways of making alpha cannot trade off).
+    "S1" / "S2" are the same with SHARED nuclei: one core nucleus per network x
+    hemisphere plus one diffusely projecting matrix population
+    (linear_jax.shared_thalamus_matrix); the matrix share is a population parameter.
     """
-    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX, SOMOT_BETA, THALAMUS, EXTRA_NAMES
+    global FIXED_GLOBALS, FREE_GLOBALS, FREE_INDEX, SOMOT_BETA, THALAMUS, EXTRA_NAMES, SHARED
     if somot_beta and thalamus:
         raise ValueError("somot_beta and thalamus are separate variants")
     SOMOT_BETA, THALAMUS = somot_beta, thalamus
+    SHARED = bool(thalamus) and thalamus.startswith("S")
     fixed = (["speed_mm_per_ms", "noise_tau_ms"] if free_fast
              else ["speed_mm_per_ms", "fast_ratio", "fast_fraction", "noise_tau_ms"])
-    if thalamus == "T2":
+    if thalamus in ("T2", "S2"):
         fixed += ["a_scale", "b_scale"]
     FIXED_GLOBALS = tuple(fixed)
     FREE_GLOBALS = tuple(n for n in LJ.GLOBAL_NAMES if n not in FIXED_GLOBALS)
@@ -115,6 +122,7 @@ class Setup:
     z_population: np.ndarray  # (d + len(nuisance),)
     use_pop: bool = False     # empirical population CSD as an extra component (model nests the null)
     t_population: np.ndarray | None = None  # (4,) unconstrained corticothalamic loop of the population fit
+    m_population: float = 0.0  # unconstrained matrix share of shared nuclei (logit)
 
     @property
     def d(self):
@@ -159,8 +167,10 @@ def make_setup(lead_name: str, population: dict | None = None, use_pop: bool = F
         z_pop = np.concatenate([z_pop, [-1.0]])  # start at ~26 % population-background power
     t_pop = (np.asarray(population["thal_u"], float) if population is not None and "thal_u" in population
              else LJ.thal_physical_to_unit(np.asarray(THAL_START)))
+    m_pop = (float(population["thal_shared_u"]) if population is not None and "thal_shared_u" in population
+             else float(np.log(MATRIX_SHARE_START / (1 - MATRIX_SHARE_START))))
     return Setup(static, lead, jnp.asarray(cov / np.mean(np.diag(cov))), jnp.asarray(mapping), names,
-                 jnp.asarray(freq), u_pop, z_pop, use_pop, t_pop)
+                 jnp.asarray(freq), u_pop, z_pop, use_pop, t_pop, m_pop)
 
 
 def full_u(setup: Setup, u_free):
@@ -209,12 +219,15 @@ def thal_unit(setup: Setup, extra=None):
     return t
 
 
-def contributions(setup: Setup, u10, extra=None, thal_u=None):
+def contributions(setup: Setup, u10, extra=None, thal_u=None, shared_u=None):
     phys = LJ.unit_to_physical(u10)
     p, speed = LJ.build_state(phys, setup.static)
     if THALAMUS:
         t = thal_unit(setup, extra) if thal_u is None else thal_u
         p = LJ.with_thalamus(p, LJ.thal_unit_to_physical(t))
+        if SHARED:
+            m = jax.nn.sigmoid(setup.m_population if shared_u is None else shared_u)
+            p = dict(p, thal_P=LJ.shared_thalamus_matrix(setup.static.contribution_index, m))
     elif extra is not None:  # somatomotor-specific fast generator (unit logits, global bounds)
         lo, hi = LJ.GLOBAL_BOUNDS[5:7, 0], LJ.GLOBAL_BOUNDS[5:7, 1]
         val = jnp.asarray(lo) + jax.nn.sigmoid(extra) * jnp.asarray(hi - lo)
@@ -255,11 +268,29 @@ def stability(setup: Setup, p, psi):
     penalty = (jnp.mean(jax.nn.relu(absc + 2.0) ** 2) * 1e-2 + jnp.mean(jax.nn.relu(0.4 - margin) ** 2) * 10.0
                + jax.nn.relu(sg - 0.9) ** 2 * 10.0)
     certified = (jnp.max(absc) < -1.0) & (jnp.min(margin) > 0.3) & (sg < 1.0)
+    if THALAMUS and SHARED:
+        # Shared nuclei: the small-gain bound is far too conservative and the per-region
+        # factorisation does not hold.  Penalise only cortico-cortical small gain and the
+        # per-region loop distance (soft guides); certify with the exact network winding.
+        p_ctx = {k: v for k, v in p.items() if not k.startswith("thal_")}
+        sg_ctx = LJ.small_gain(p_ctx, psi, grid)
+        _, dist = LJ.thalamic_certificate({k: v for k, v in p.items() if k != "thal_P"}, psi, 150.0, 0.1)
+        ok, _ = LJ.network_winding(jax.lax.stop_gradient(p), jax.lax.stop_gradient(psi), delays_of(setup))
+        penalty = (jnp.mean(jax.nn.relu(absc + 2.0) ** 2) * 1e-2 + jnp.mean(jax.nn.relu(0.4 - margin) ** 2) * 10.0
+                   + jax.nn.relu(sg_ctx - 0.9) ** 2 * 10.0 + jax.nn.relu(0.1 - dist) ** 2 * 100.0)
+        certified = (jnp.max(absc) < -1.0) & (jnp.min(margin) > 0.3) & ok
+        return penalty, certified
     if THALAMUS:  # each region's own loop: no encirclement, and keep away from the critical point
         ok, dist = LJ.thalamic_certificate(p, psi, 150.0, 0.1)
         penalty = penalty + jax.nn.relu(0.15 - dist) ** 2 * 100.0
         certified = certified & ok & (dist > 0.05)
     return penalty, certified
+
+
+def delays_of(setup: Setup):
+    """Conduction delays at the population speed (speed is fixed in every subject fit)."""
+    speed = LJ.unit_to_physical(jnp.asarray(setup.u_population))[LJ.GLOBAL_NAMES.index("speed_mm_per_ms")]
+    return LJ.delays_for_speed(setup.static, speed)
 
 
 @dataclass

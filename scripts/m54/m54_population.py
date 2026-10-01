@@ -41,11 +41,12 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--modes", type=int, default=0, help="score only the K principal spatial modes (0: all)")
     ap.add_argument("--thalamus", action="store_true", help="fit the corticothalamic loop's four parameters too")
+    ap.add_argument("--shared", action="store_true", help="shared thalamic nuclei; also fit the matrix share")
     args = ap.parse_args()
     if args.thalamus:
-        M.configure(thalamus="T1")
+        M.configure(thalamus="S1" if args.shared else "T1")
     setup = M.make_setup(args.lead, None)
-    nt = 4 if args.thalamus else 0
+    nt = (5 if args.shared else 4) if args.thalamus else 0
     u0, z0 = m53_start(M.ROOT / args.start, setup)
     ids = Path(M.ROOT / args.subjects_file).read_text().split() if args.subjects_file else None
     if ids is None:
@@ -66,14 +67,15 @@ def main() -> None:
 
     def objective(x):
         u, t, z = x[:10], x[10:10 + nt], x[10 + nt:]
-        C, common, p, psi = M.contributions(setup, u, thal_u=t if nt else None)
+        C, common, p, psi = M.contributions(setup, u, thal_u=t[:4] if nt else None,
+                                            shared_u=t[4] if nt == 5 else None)
         S = M.combine(setup, C, common, z)
         nll = jax.vmap(lambda a, pd_, c, n: W.profiled_nll(S, a, pd_, c, n)[0])(A, pad, Cc, nu)
         pen, cert = M.stability(setup, p, psi)
         # tiny ridge on the spatial log-gains removes their free common offset
         return jnp.sum(nll) / dof + pen + 1e-4 * jnp.sum(z[:setup.d] ** 2), cert
 
-    x0 = jnp.asarray(np.concatenate([u0, np.asarray(setup.t_population)[:nt], z0]))
+    x0 = jnp.asarray(np.concatenate([u0, np.concatenate([np.asarray(setup.t_population), [setup.m_population]])[:nt], z0]))
     vg = jax.jit(jax.value_and_grad(lambda x: objective(x)[0]))
     cert_fn = jax.jit(lambda x: objective(x)[1])
     history = []
@@ -99,6 +101,9 @@ def main() -> None:
            "physical": dict(zip(LJ.GLOBAL_NAMES, phys.tolist())), "spatial_names": setup.spatial,
            "nuisance": dict(zip(M.NUISANCE, x[10 + nt + setup.d:].tolist())), "subjects": len(data.ids),
            "emp_dir": args.emp_dir, "lead": args.lead, "message": str(res.message), "nit": int(res.nit)}
+    if nt == 5:
+        out["thal_shared_u"] = float(x[14])
+        out["thal_matrix_share"] = float(1 / (1 + np.exp(-x[14])))
     if nt:
         out["thal_u"] = x[10:14].tolist()
         out["thal_physical"] = dict(zip(LJ.THAL_NAMES, np.asarray(LJ.thal_unit_to_physical(jnp.asarray(x[10:14]))).tolist()))

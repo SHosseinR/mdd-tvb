@@ -100,10 +100,15 @@ VARIANTS = {"full": ([], "", []), "m10": (["--modes", "10"], "_m10", ["--modes",
             "m10popsomot": (["--modes", "10", "--pop-background", "--somot-beta"], "_m10", ["--modes", "10"]),
             # corticothalamic loop: population fit with the loop; T1 loop gains free, T2 gains + delay free
             "m10popthal1": (["--modes", "10", "--pop-background", "--thalamus", "T1"], "_m10thal", ["--modes", "10", "--thalamus"]),
-            "m10popthal2": (["--modes", "10", "--pop-background", "--thalamus", "T2"], "_m10thal2", ["--modes", "10", "--thalamus"])}
-POP_OF = {"_m10fast": "_m10", "_m10thal2": "_m10thal"}  # bank tag -> population fit it reuses
+            "m10popthal2": (["--modes", "10", "--pop-background", "--thalamus", "T2"], "_m10thal2", ["--modes", "10", "--thalamus"]),
+            # shared thalamic nuclei (core per network x hemisphere + diffuse matrix)
+            "m10popthalS1": (["--modes", "10", "--pop-background", "--thalamus", "S1"], "_m10thalS",
+                             ["--modes", "10", "--thalamus", "--shared"]),
+            "m10popthalS2": (["--modes", "10", "--pop-background", "--thalamus", "S2"], "_m10thalS2",
+                             ["--modes", "10", "--thalamus", "--shared"])}
+POP_OF = {"_m10fast": "_m10", "_m10thal2": "_m10thal", "_m10thalS2": "_m10thalS"}  # bank tag -> population fit it reuses
 FIX_OF = {"_m10fast": ["--fix", "speed_mm_per_ms", "noise_tau_ms"],
-          "_m10thal2": FIX + ["a_scale", "b_scale"]}
+          "_m10thal2": FIX + ["a_scale", "b_scale"], "_m10thalS2": FIX + ["a_scale", "b_scale"]}
 
 
 def fit(name, lead, emp, extra, variant="full"):
@@ -127,7 +132,7 @@ def bank(lead, ptag):
         shutil.copy2(work / pop, work / f"{R}/population_{lead}{ptag}.json")
     run(f"bank_{lead}{ptag}", ["scripts/linear/build_analytic_bank.py", "--lead", lead, "--samples", "2000", "--half-width", "1.2",
                                "--population", pop, "--out", f"{R}/bank_{lead}{ptag}.npz"] + FIX_OF.get(ptag, FIX)
-        + (["--thalamus"] if "thal" in ptag else []))
+        + (["--thalamus"] if "thal" in ptag else []) + (["--shared-thalamus"] if "thalS" in ptag else []))
 
 
 DEV = ["--subjects-file", f"{LISTS}/dev_restEC_v2.txt"]
@@ -203,7 +208,8 @@ for stage in STAGES:
         if "pop" in variant:
             gen += ["--pop-background"]
         if "thal" in variant:
-            gen += ["--thalamus", "T" + variant[-1]]
+            suffix = variant.split("thal")[1]
+            gen += ["--thalamus", suffix if suffix[0] in "TS" else "T" + suffix]
         if variant == "m10popfast":
             gen += ["--free-fast"]
         if variant == "m10popsomot":

@@ -61,3 +61,28 @@ def test_certificate_flags_an_unstable_own_loop():
     ok_huge, _ = LJ.thalamic_certificate(LJ.with_thalamus(p, jnp.asarray([1e5, 0.0, 80.0, 0.0])), psi)
     ok_off, dist_off = LJ.thalamic_certificate(p, psi)
     assert bool(ok_weak) and not bool(ok_huge) and bool(ok_off) and float(dist_off) == 1.0
+
+
+def test_shared_matrix_reduces_to_private_loops_and_is_a_contraction():
+    groups = np.array([0, 0, 1, 1, 1, 2])
+    P = np.asarray(LJ.shared_thalamus_matrix(groups, 0.3))
+    assert np.allclose(P, P.T) and np.linalg.norm(P, 2) <= 1 + 1e-9 and np.allclose(P.sum(1), 1.0)
+    p, delays = _toy_state()
+    lead = jnp.asarray(np.random.default_rng(1).normal(size=(4, 6)))
+    f = jnp.linspace(2.0, 40.0, 12)
+    loop = jnp.asarray([40.0, 0.5, 80.0, 0.3])
+    private, _ = LJ.network_sensor_transfer(LJ.with_thalamus(p, loop), lead, jnp.asarray(delays), f)
+    singletons = dict(LJ.with_thalamus(p, loop), thal_P=LJ.shared_thalamus_matrix(np.arange(6), 0.0))
+    shared, _ = LJ.network_sensor_transfer(singletons, lead, jnp.asarray(delays), f)
+    assert np.allclose(np.asarray(private), np.asarray(shared), rtol=1e-8, atol=1e-12)
+
+
+def test_network_winding_flags_instability():
+    p, delays = _toy_state()
+    psi = LJ.equilibrium(p)
+    P = LJ.shared_thalamus_matrix(np.array([0, 0, 0, 1, 1, 1]), 0.3)
+    ok_weak, w_weak = LJ.network_winding(dict(LJ.with_thalamus(p, jnp.asarray([5.0, 0.5, 80.0, 0.3])), thal_P=P), psi,
+                                         jnp.asarray(delays))
+    ok_huge, w_huge = LJ.network_winding(dict(LJ.with_thalamus(p, jnp.asarray([1e5, 0.0, 80.0, 0.0])), thal_P=P), psi,
+                                         jnp.asarray(delays))
+    assert bool(ok_weak) and float(w_weak) == 0 and not bool(ok_huge)

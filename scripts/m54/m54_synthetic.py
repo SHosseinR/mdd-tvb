@@ -115,7 +115,7 @@ def main():
     ap.add_argument("--pop-background", action="store_true")
     ap.add_argument("--free-fast", action="store_true")
     ap.add_argument("--somot-beta", action="store_true")
-    ap.add_argument("--thalamus", choices=["T1", "T2"], default=None)
+    ap.add_argument("--thalamus", choices=["T1", "T2", "S1", "S2"], default=None)
     args = ap.parse_args()
     generate(args) if args.mode == "generate" else summarise(args)
 

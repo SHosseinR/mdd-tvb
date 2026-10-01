@@ -75,7 +75,7 @@ def main() -> None:
                     help="somatomotor-specific fast (beta) generator ratio and fraction, fitted in the refinement")
     ap.add_argument("--free-fast", action="store_true",
                     help="fit the fast (beta) generator's time-scale ratio and power fraction per subject")
-    ap.add_argument("--thalamus", choices=["T1", "T2"], default=None,
+    ap.add_argument("--thalamus", choices=["T1", "T2", "S1", "S2"], default=None,
                     help="corticothalamic loop per region: T1 = loop gains free (delay fixed), "
                          "T2 = loop gains and delay free (cortical time constants fixed)")
     ap.add_argument("--freeze-neural", action="store_true",
