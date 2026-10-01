@@ -41,7 +41,10 @@ disorders such as major depressive disorder (MDD). Most published fits, however:
   - differs with depressive symptoms in the batch-free data (pooled −0.36 SD, p = 0.013);
   - is not depression-specific among TDBRAIN patients.
 - **Thalamic loop.** A per-person corticothalamic delay tracked individual alpha frequency in all seven cohorts and
-  increased with age. Linear loops could not produce beta peaks. ⟨Shared-nuclei result: §4.5⟩
+  increased with age. Linear loops could not produce beta peaks.
+- **Shared nuclei.** Letting groups of regions share thalamic nuclei (one per network × hemisphere, plus a diffuse
+  matrix population) kept the fit gain: 79% of subjects better than M5.4. It also restored the spatial alpha
+  coherence that private loops lost (64% of subjects better than private loops, p = 2×10⁻¹⁰).
 - **Evoked responses.** A person's resting network predicted their held-out ERPs no better than anyone else's.
 
 **Conclusions.**
@@ -247,7 +250,44 @@ The population fit chose a loop delay of 87 ms (Robinson's range), and cortico-c
 - In TDBRAIN it rises with age (+0.16 SD per decade, p = 10⁻¹⁰), with no batch or depression effect.
 - The fit gain holds within TDBRAIN's system but not on the other systems.
 
-**Shared nuclei (S1/S2):** ⟨pending⟩
+**Shared nuclei (S1/S2; development cohort, 252 subjects; `mddtvb-m54s-shared`).**
+
+Setup:
+- One core nucleus per network × hemisphere (14) plus one diffusely projecting matrix population.
+- The population fit kept the loop near its starting values: gain 36, reticular fraction 0.50, delay 85 ms, matrix
+  share 0.31. Cortico-cortical coupling was 3.3.
+- Per subject, the free parameters are those of T1 (S1) or T2 (S2).
+
+| Median, error relative to the population average | M5.4 | T1 | T2 | **S1** | S2 |
+|---|---|---|---|---|---|
+| Unseen deviance | 0.840 | 0.827 | 0.829 | **0.826** | 0.826 |
+| Whole spectrum | 0.774 | 0.720 | 0.749 | **0.721** | 0.769 |
+| Zero-lag alpha coherence | 1.116 | 1.133 | 1.164 | 1.086 | **1.052** |
+| Alpha topography | 0.981 | 0.981 | 0.989 | 0.959 | **0.949** |
+| Zero-lag beta coherence | 1.039 | 1.033 | 1.011 | 1.027 | **1.002** |
+| Alpha peak frequency | 0.771 | 0.725 | **0.627** | 0.674 | 0.681 |
+| Beta shape | 0.900 | 0.878 | **0.865** | 0.897 | 0.897 |
+
+Paired per subject:
+- **S1 vs M5.4:** unseen deviance better in 79% (p = 2×10⁻²⁴), spectrum in 78%, alpha frequency in 62%; coherence
+  and topography no worse.
+- **S1 vs T1:** same deviance (51%); zero-lag alpha coherence better in 64% (p = 2×10⁻¹⁰) and alpha topography in 64%
+  (p = 6×10⁻⁹).
+- **S2 vs T2:** coherence better in 72% (p = 3×10⁻¹⁴), but deviance and spectrum worse.
+- **S2 recovery:** all 25 parameters recovered (median r = 0.89, delay r = 0.86, 95% coverage 0.91).
+- **S2 delay:** still tracks alpha frequency (ρ = −0.29) and age (ρ = +0.29, both p < 10⁻⁵), though less tightly than
+  with private loops.
+
+**Reading.**
+- Shared nuclei remove the coherence penalty of private loops, as the anatomy suggests: one nucleus drives many
+  regions in phase (Saalmann 2012).
+- S1 is the best resting-EEG model of the project.
+- Beta is unchanged: shared or not, a linear loop does not make beta.
+
+**Certification note.** Shared nuclei are certified by the exact network argument principle on a 0.02 Hz grid. A
+cross-check against the exact per-region factorisation (private loops, 25 states) found the winding number correct
+in every case. The additional rule that rejects any phase step above 1 rad was over-cautious: it rejected 44–72% of
+genuinely stable states. The reported fits are therefore all stable and, if anything, slightly under-optimised.
 
 ### 4.6 Depression
 
@@ -355,7 +395,8 @@ So the parameters carry biological information.
 1. Test the eyes-open visual-drive change on an independent dataset with matched acquisition (e.g. EMBARC), with a
    pre-registered direction.
 2. For the model:
-   - shared thalamic nuclei (§4.5);
+   - adopt S1 (shared nuclei) as the resting model;
+   - anatomical thalamocortical weights instead of network labels;
    - a non-linear (waveform) term for alpha harmonics;
    - region-specific resonators for rolandic beta and frontal theta.
 3. For evoked constraints: steady-state (SSVEP/ASSR) or TMS-evoked data with known inputs.
