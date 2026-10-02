@@ -95,6 +95,10 @@ Resting EEG behaves like a bell. The audit found that the original fits (**M5.1*
 The test is mathematical as well as visual. At the model's resting point, the **eigenvalues** say whether a small kick dies
 away (negative: bell) or grows (positive: clock). From M5.3 on, every fitted model is **certified** to be a bell.
 
+The point where a bell turns into a clock is a **Hopf bifurcation**. In a single Jansen–Rit column it sits at a drive of
+p ≈ 316: more drive pushes the cells towards saturation, which weakens the feedback and damps the ringing; less drive
+does the opposite until the damping reaches zero (notebook §3).
+
 ---
 
 ## 5. Computing the prediction: simulation vs the exact formula
@@ -238,6 +242,7 @@ Details: `docs/PROJECT_STATUS_2026-09-27.md`.
 | bank | M5.1's library of pre-simulated parameter sets | §5 |
 | BEM | realistic head model with brain, skull and scalp layers | §3 |
 | bell / clock (limit cycle) | rhythm driven by input / rhythm that runs by itself | §4, notebook §3 |
+| Hopf bifurcation | the point where a bell turns into a clock: damping reaches zero | §4, notebook §3 |
 | ceiling | the best achievable prediction: the person's own first half | §7, notebook §10 |
 | coherence (zero-lag / lagged) | how two channels co-vary at one frequency, without / with a time shift | §2, notebook §12 |
 | cross-spectrum | power of every channel and co-variation of every pair, per frequency | §2 |
