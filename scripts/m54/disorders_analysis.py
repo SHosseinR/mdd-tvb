@@ -305,6 +305,68 @@ def fig_maps(x, csd_val, csd_pred, freq, labels):
     NUMBERS["maps"] = stats
 
 
+def fig_maps_wide(x, csd_val, csd_pred, freq, labels, band="alpha"):
+    """Slide version: disorders as columns, measured / predicted as rows."""
+    import mne
+    info = mne.create_info(labels, 500.0, "eeg")
+    info.set_montage(mne.channels.make_standard_montage("standard_1005"), match_case=False)
+    key = BANDS[band]
+    ids, V = feature_matrix(x, csd_val, key, freq, labels)
+    _, P = feature_matrix(x, csd_pred, key, freq, labels)
+    d = x.loc[ids]
+    cov = d[["age", "sex"]].fillna(d[["age", "sex"]].mean()).to_numpy()
+    V, P = residualise(V, cov), residualise(P, cov)
+    g = d.group.to_numpy()
+    maps = {dis: (V[g == dis].mean(0) - V[g == "Healthy"].mean(0), P[g == dis].mean(0) - P[g == "Healthy"].mean(0),
+                  ttest_ind(V[g == dis], V[g == "Healthy"], axis=0)[1]) for dis in DISORDERS}
+    lim = max(max(np.abs(a).max(), np.abs(b).max()) for a, b, _ in maps.values())
+    fig, axes = plt.subplots(2, len(DISORDERS), figsize=(2.15 * len(DISORDERS), 5.0), layout="constrained")
+    for c, dis in enumerate(DISORDERS):
+        mv, mp, pv = maps[dis]
+        for r, m in enumerate((mv, mp)):
+            im, _ = mne.viz.plot_topomap(m, info, axes=axes[r, c], show=False, cmap="RdBu_r", vlim=(-lim, lim),
+                                         contours=0, sensors=True, mask=(pv < 0.05) if r == 0 else None,
+                                         mask_params=dict(marker="o", markerfacecolor="k", markersize=3))
+        axes[0, c].set_title(dis, color=COLORS[dis], fontsize=12)
+        axes[1, c].set_xlabel(f"r = {np.corrcoef(mv, mp)[0, 1]:+.2f}", fontsize=10.5)
+    axes[0, 0].set_ylabel("measured", fontsize=12)
+    axes[1, 0].set_ylabel("M5.4", fontsize=12)
+    fig.colorbar(im, ax=axes, shrink=0.75, label="Δ centred log power")
+    fig.savefig(FIG / f"maps_{band}_wide.png")
+    plt.close(fig)
+
+
+def fig_spectra_wide(x, csd_val, csd_pred, freq, labels, regions=("occipital", "central")):
+    """Slide version: disorders as columns, two channel regions as rows."""
+    ids = [s for s in x.index if s in csd_val]
+    d = x.loc[ids]
+    g = d.group.to_numpy()
+    cov = d[["age", "sex"]].fillna(d[["age", "sex"]].mean()).to_numpy()
+    fig, axes = plt.subplots(len(regions), len(DISORDERS), figsize=(2.25 * len(DISORDERS), 2.6 * len(regions)),
+                             sharex=True, sharey="row", layout="constrained")
+    for r, rname in enumerate(regions):
+        chans = REGIONS[rname]
+        V = residualise(np.stack([rel_log_spectrum(csd_val[s], labels, chans) for s in ids]), cov)
+        P = residualise(np.stack([rel_log_spectrum(csd_pred[s], labels, chans) for s in ids]), cov)
+        for c, dis in enumerate(DISORDERS):
+            ax = axes[r, c]
+            a, b = V[g == dis], V[g == "Healthy"]
+            m = a.mean(0) - b.mean(0)
+            se = np.sqrt(a.var(0, ddof=1) / len(a) + b.var(0, ddof=1) / len(b))
+            ax.fill_between(freq, m - 1.96 * se, m + 1.96 * se, color=COLORS[dis], alpha=0.18, lw=0)
+            ax.plot(freq, m, color=COLORS[dis], lw=2)
+            ax.plot(freq, P[g == dis].mean(0) - P[g == "Healthy"].mean(0), color=INK, lw=1.4, ls="--")
+            ax.axhline(0, color=MUTED, lw=0.7)
+            if r == 0:
+                ax.set_title(dis, color=COLORS[dis], fontsize=12)
+            if c == 0:
+                ax.set_ylabel(f"{rname}\nΔ log10 rel. power", fontsize=10.5)
+            if r == len(regions) - 1:
+                ax.set_xlabel("Hz")
+    fig.savefig(FIG / "spectra_differences_wide.png")
+    plt.close(fig)
+
+
 def rel_log_spectrum(csd, labels, chans):
     pw = np.maximum(np.real(np.einsum("fii->fi", csd)), 1e-30)
     pw = pw / pw.sum(0, keepdims=True)
@@ -465,6 +527,11 @@ def fig_classification(x, csd_val, freq, labels):
 
 def main():
     x, bl, csd_val, csd_pred, freq, labels = load()
+    if "--slides" in sys.argv:  # only the wide slide figures
+        for band in ("alpha", "beta"):
+            fig_maps_wide(x, csd_val, csd_pred, freq, labels, band)
+        fig_spectra_wide(x, csd_val, csd_pred, freq, labels)
+        return
     NUMBERS["groups"] = {g: {"n": int((x.group == g).sum()), "age_mean": float(x.loc[x.group == g, "age"].mean()),
                              "sex_mean_code": float(x.loc[x.group == g, "sex"].mean())} for g in ORDER}
     print(json.dumps(NUMBERS["groups"], indent=1))

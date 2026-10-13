@@ -1,5 +1,8 @@
 # How the MDD–TVB project works: a plain-language primer
 
+> **Correction (2026-10-13).** This report calls the TDBRAIN Healthy-vs-patient differences an "acquisition-batch artefact". That was over-stated. The evidence for a technical cause rested on one early-recorded clinical group (subjective memory complaints: older, non-psychiatric). The 15 healthy volunteers recorded in the late period look like the early ones (−0.09 SD, p = 0.71). The recording metadata are identical across periods. What holds: the differences are **not depression-specific**: they are shared by all late-recorded patient groups (MDD, OCD, insomnia, ADHD). Whether they are technical or a general patient feature cannot be decided with TDBRAIN. Where this report says "batch effect", read "difference between late-recorded patients and early-recorded healthy/SMC subjects". See `docs/DISORDERS_2026-10.md`.
+
+
 **Companion to** `notebooks/learn_01_spectral_model_fitting.ipynb`. The notebook shows each idea working on real
 data; this primer explains the ideas in words. Each section names the notebook section (§) and the slides where the idea
 appears. "progress_v2" means the current deck; "v2-o" means the saved full version `slides/progress_v2-o.pptx`.
@@ -226,7 +229,8 @@ model**, not DCM itself (notebook §14).
 
 The machinery now works: a fast, exact, certified-stable model; a proper likelihood; knobs that are recoverable, repeatable and
 honestly uncertain; and it transfers to three other laboratories' EEG systems. The scientific question has no positive answer
-in these data. TDBRAIN's healthy-vs-depressed contrast is mostly a recording-batch effect. Across four independent sources no EEG
+in these data. TDBRAIN's healthy-vs-depressed differences are shared by all late-recorded patient groups (not
+depression-specific; technical or general patient feature: undecided). Across four independent sources no EEG
 feature or knob separates depressed from healthy people consistently, and nothing in resting EEG predicts rTMS response beyond
 age and severity. The model also lacks individual beta, frontal theta and non-sinusoidal alpha, which need a new model component.
 Details: `docs/PROJECT_STATUS_2026-09-27.md`.

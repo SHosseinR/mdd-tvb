@@ -1,5 +1,8 @@
 # Beta and three batch-free depression datasets
 
+> **Correction (2026-10-13).** This report calls the TDBRAIN Healthy-vs-patient differences an "acquisition-batch artefact". That was over-stated. The evidence for a technical cause rested on one early-recorded clinical group (subjective memory complaints: older, non-psychiatric). The 15 healthy volunteers recorded in the late period look like the early ones (−0.09 SD, p = 0.71). The recording metadata are identical across periods. What holds: the differences are **not depression-specific**: they are shared by all late-recorded patient groups (MDD, OCD, insomnia, ADHD). Whether they are technical or a general patient feature cannot be decided with TDBRAIN. Where this report says "batch effect", read "difference between late-recorded patients and early-recorded healthy/SMC subjects". See `docs/DISORDERS_2026-10.md`.
+
+
 **Date:** 2026-09-27 · **Follows:** `docs/NEXT_STEPS_REPORT_2026-09-25.md` · **Branch:** `claude/audit-linear-regime`
 
 Two questions from the last round:

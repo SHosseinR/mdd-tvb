@@ -1,5 +1,8 @@
 # Eyes open + eyes closed, a thalamic loop, and evoked responses (2026-09-29)
 
+> **Correction (2026-10-13).** This report calls the TDBRAIN Healthy-vs-patient differences an "acquisition-batch artefact". That was over-stated. The evidence for a technical cause rested on one early-recorded clinical group (subjective memory complaints: older, non-psychiatric). The 15 healthy volunteers recorded in the late period look like the early ones (−0.09 SD, p = 0.71). The recording metadata are identical across periods. What holds: the differences are **not depression-specific**: they are shared by all late-recorded patient groups (MDD, OCD, insomnia, ADHD). Whether they are technical or a general patient feature cannot be decided with TDBRAIN. Where this report says "batch effect", read "difference between late-recorded patients and early-recorded healthy/SMC subjects". See `docs/DISORDERS_2026-10.md`.
+
+
 This report covers the three steps chosen after the literature review
 (`docs/LITERATURE_REST_AND_EVOKED_2026-09-27.md`):
 
@@ -20,7 +23,7 @@ This report covers the three steps chosen after the literature review
 | 3 | Does a person's resting network predict their **evoked** responses? | **No.** Own network ≈ other people's ≈ population (R² 0.30 vs 0.29; 0.18 vs 0.18; p ≥ 0.36). The reward positivity is clear in the data (1.45 µV, t = 4.2), slightly smaller with high BDI (d = −0.21, n.s.). The model's frontal input does not capture the reward difference. |
 
 One-line reading:
-- The within-person contrast was the right idea for removing batch effects.
+- The within-person contrast was the right idea for reducing the shared patient-vs-volunteer difference.
 - The thalamus makes a better and more interpretable resting model, but not a beta generator.
 - The resting parameters carry no individual information about evoked responses.
 - The depression signal is the familiar one: present in single-system data, not specific among patients.
@@ -46,7 +49,7 @@ analysis: early era + clinical + depression + age + sex.
 | Beta reactivity | +0.18, p = 0.16 | −0.10, p = 0.27 | −0.017*** | −0.005 |
 | Whole spectrum (pattern) | — | — | — | 0.74 → 0.53 (reactivity) |
 
-The contrast removes about half or more of the batch effect. It carries a small
+The contrast removes about half or more of the recording-period term. It carries a small
 depression effect, and a clear age effect (reactivity declines with age).
 
 ### 1b. Age as a positive control (`scripts/m54/age_control.py`; existing eyes-closed fits)
@@ -205,7 +208,7 @@ What the loop can and cannot do:
 - **TDBRAIN decomposition of the delay:**
   - batch −0.05, clinical +0.03, depression +0.04 (all n.s.);
   - age +0.16 SD per decade (p = 10⁻¹⁰).
-- **Loop gain** carries batch (+0.29, p = 0.02) and clinical status (+0.36,
+- **Loop gain** carries a recording-period term (+0.29, p = 0.02) and clinical status (+0.36,
   p = 0.007), but no depression effect.
 - **Depression contrasts on the delay:** MODMA MDD vs HC +0.60 SD (p = 0.03),
   Mumtaz +0.13, ds003478 −0.14. They are inconsistent, so there is no depression

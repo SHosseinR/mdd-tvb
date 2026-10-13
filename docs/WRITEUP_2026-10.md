@@ -33,11 +33,13 @@ disorders such as major depressive disorder (MDD). Most published fits, however:
 - **Fit and inference.** The final model (M5.4) predicts unseen data better than the population average in 99% of
   TDBRAIN subjects (median deviance ratio 0.84; same-subject ceiling 0.69). It transfers unchanged to three other EEG
   systems (0.86–0.87). Its parameters are recoverable (median r = 0.88), calibrated, and reliable (ICC 0.76–0.94).
-- **Depression.** The Healthy-vs-MDD contrast in TDBRAIN is dominated by an acquisition-batch confound. No model
+- **Depression.** The Healthy-vs-MDD differences in TDBRAIN are shared by every late-recorded patient group (MDD,
+  OCD, insomnia, ADHD), so they are not depression-specific. Whether they are technical (patients were recorded later
+  than most volunteers) or a general patient feature cannot be decided. No model
   parameter separated depressed from control participants consistently across datasets. Nothing from resting EEG
   predicted rTMS response; only age and severity did (AUC 0.67).
 - **Eyes-open change.** A within-person contrast, the change in visual-network drive when the eyes open:
-  - removes much of the batch effect;
+  - is less dominated by the shared patient-vs-volunteer difference;
   - differs with depressive symptoms in the batch-free data (pooled −0.36 SD, p = 0.013);
   - is not depression-specific among TDBRAIN patients.
 - **Thalamic loop.** A per-person corticothalamic delay tracked individual alpha frequency in all seven cohorts and
@@ -247,7 +249,8 @@ The population fit chose a loop delay of 87 ms (Robinson's range), and cortico-c
 **T2 on all seven cohorts:**
 - The per-person delay correlates with individual alpha frequency in every dataset (ρ −0.19 to −0.56; 6 of 7
   significant).
-- In TDBRAIN it rises with age (+0.16 SD per decade, p = 10⁻¹⁰), with no batch or depression effect.
+- In TDBRAIN it rises with age (+0.16 SD per decade, p = 10⁻¹⁰), with no recording-period, patient or depression
+  effect.
 - The fit gain holds within TDBRAIN's system but not on the other systems.
 
 **Shared nuclei (S1/S2; development cohort, 252 subjects; `mddtvb-m54s-shared`).**
@@ -291,12 +294,20 @@ genuinely stable states. The reported fits are therefore all stable and, if anyt
 
 ### 4.6 Depression
 
-**1. TDBRAIN's Healthy-vs-MDD contrast is an acquisition-batch artefact.**
-- Healthy volunteers were recorded in an early era and patients later.
-- The one robust parameter difference (left dorsal-attention gain, −0.51 SD) is equally present in late-era OCD,
-  insomnia and ADHD patients, and absent in early-era memory-complaint patients. Batch explains it (+0.42 SD,
-  p = 0.001); depression does not (−0.04, p = 0.63).
-- Most data-level Healthy–MDD differences reproduce the batch pattern (r = 0.72–0.90).
+**1. TDBRAIN's Healthy-vs-MDD differences are not depression-specific.**
+- Most healthy volunteers were recorded in an early period, and patients later.
+- The one robust parameter difference (left dorsal-attention gain, −0.51 SD) is equally present in OCD, insomnia and
+  ADHD patients (−0.47 to −0.67 SD). Depressed and non-depressed patients do not differ (depression term −0.04,
+  p = 0.63).
+- Whether it is technical or a general patient feature is undecided:
+  - A regression term for recording period absorbs it (+0.42 SD), but that term is driven by the early-recorded SMC
+    group (older, non-psychiatric).
+  - The 15 late-recorded healthy volunteers look like the early ones (−0.09 SD, p = 0.71).
+  - The recording metadata are identical across periods.
+- Most data-level Healthy–MDD differences are the same as the difference between other, non-depressed patients and
+  the early healthy/SMC subjects (pattern r = 0.72–0.90).
+- The full analysis across all disorders is in `docs/DISORDERS_2026-10.md`. Most clinical groups share one
+  parameter, map and connectivity profile vs Healthy, and nothing is specific to depression.
 
 **2. Across the batch-free datasets, no parameter is consistent.** The best candidate (inhibitory time scale) is
 heterogeneous: +1.23, +0.48, −0.01 and +0.04 SD (I² = 0.82).
@@ -305,8 +316,9 @@ heterogeneous: +1.23, +0.48, −0.01 and +0.04 SD (I² = 0.82).
 depressed patients from other patients, and is absent in unmedicated high-BDI students.
 
 **4. Within-person eyes-open change.**
-- At the data level, the eyes-closed/eyes-open contrast halves the batch effect: alpha +0.34 → +0.11 SD; the
-  correlation of depression and batch patterns falls from 0.91 to 0.55 (alpha) and from 0.89 to 0.0 (beta).
+- At the data level, the eyes-closed/eyes-open contrast roughly halves the recording-period term: alpha +0.34 →
+  +0.11 SD.
+- Its depression pattern resembles the non-depressed-patient pattern less: r 0.91 → 0.55 (alpha), 0.89 → 0.0 (beta).
 - In the joint fit, the best-predicting change (75% of subjects) was in visual-network drive:
 
 | Contrast | Left | Right |
@@ -362,7 +374,8 @@ So the parameters carry biological information.
 
 ### What did not work, and why
 - **No depression signal.**
-  - In TDBRAIN the disease contrast is confounded by acquisition era.
+  - In TDBRAIN the disease contrast is confounded with recording period, and its differences are shared by all
+    patient groups.
   - In the batch-free datasets the effects are small (≈ 0.2–0.4 SD) at small sample sizes (≈ 110 depressed pooled).
   - What does replicate tends to separate patients from healthy controls rather than depression from other
     conditions.
@@ -379,8 +392,8 @@ So the parameters carry biological information.
   unseen data, and rarely check batch structure.
 - **Literature on depression:** the depression literature's non-replication (Widge 2019) is mirrored here at the
   level of model parameters.
-- **Batch-robust design:** within-person contrasts, used by Rowe 2004 and Hartoyo 2020 for alpha blocking, were the
-  most batch-robust quantities we found.
+- **Within-person contrasts:** used by Rowe 2004 and Hartoyo 2020 for alpha blocking, they were the quantities
+  least dominated by the shared patient-vs-volunteer difference.
 - **Thalamus:** the corticothalamic delay result agrees with Robinson and van Albada's work. Shared thalamic nuclei
   (COALIA; Müller 2023) are motivated by the loss of coherence with private loops.
 
@@ -433,7 +446,8 @@ So the parameters carry biological information.
 | Report | Content |
 |---|---|
 | `INDEPENDENT_AUDIT_2026-09-24.md` | why the original fits failed; analytic stable-regime model |
-| `NEXT_STEPS_REPORT_2026-09-25.md` | external test, v2 cleaning, M5.4 likelihood, rTMS, batch confound |
+| `NEXT_STEPS_REPORT_2026-09-25.md` | external test, v2 cleaning, M5.4 likelihood, rTMS, specificity (batch wording corrected) |
+| `DISORDERS_2026-10.md` | M5.4 across all TDBRAIN disorders: shared patient profile, nothing depression-specific |
 | `BETA_AND_NEW_DATASETS_2026-09-27.md` | beta origin, three batch-free datasets |
 | `LITERATURE_REST_AND_EVOKED_2026-09-27.md` | literature on model fits and evoked responses |
 | `EOEC_THALAMUS_EVOKED_2026-09-29.md` | joint EO/EC, corticothalamic loops, evoked responses |

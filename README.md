@@ -45,8 +45,9 @@ connectivity group effect.
   population background. It beats the population average in development and externally, and its parameters are
   identifiable, reliable and calibrated.
 - **rTMS response:** no EEG or model feature predicts it (pre-specified); only age and baseline severity do.
-- **Batch confound:** TDBRAIN's Healthy-vs-MDD contrast is confounded by acquisition batch. The "robust" parameter
-  difference and most Healthy–MDD EEG differences reproduce a batch effect estimated without depressed subjects.
+- **Not depression-specific:** TDBRAIN's Healthy-vs-MDD contrast is confounded with recording period. The "robust"
+  parameter difference and most Healthy–MDD EEG differences are shared by all late-recorded patient groups (OCD,
+  insomnia, ADHD); whether technical or a general patient feature is undecided (`docs/DISORDERS_2026-10.md`).
 
 ## Scientific definition
 

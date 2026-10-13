@@ -1,5 +1,8 @@
 # MDD–TVB: where the project stands
 
+> **Correction (2026-10-13).** This report calls the TDBRAIN Healthy-vs-patient differences an "acquisition-batch artefact". That was over-stated. The evidence for a technical cause rested on one early-recorded clinical group (subjective memory complaints: older, non-psychiatric). The 15 healthy volunteers recorded in the late period look like the early ones (−0.09 SD, p = 0.71). The recording metadata are identical across periods. What holds: the differences are **not depression-specific**: they are shared by all late-recorded patient groups (MDD, OCD, insomnia, ADHD). Whether they are technical or a general patient feature cannot be decided with TDBRAIN. Where this report says "batch effect", read "difference between late-recorded patients and early-recorded healthy/SMC subjects". See `docs/DISORDERS_2026-10.md`.
+
+
 **Date:** 2026-09-27 · **Branch:** `claude/audit-linear-regime` (all work committed and pushed; `main` untouched)
 · **Detailed reports:** `INDEPENDENT_AUDIT_2026-09-24.md`, `NEXT_STEPS_REPORT_2026-09-25.md`,
 `BETA_AND_NEW_DATASETS_2026-09-27.md`. A glossary of the technical terms is at the end (§9).
@@ -19,7 +22,8 @@ later use the fitted models to design TMS treatment.
 - tested on data never used for development, including three other laboratories' EEG systems.
 
 **The scientific question it was pointed at does not have a positive answer in the available data:**
-- The Healthy-vs-MDD contrast in TDBRAIN is mostly a recording-batch artefact.
+- The Healthy-vs-MDD differences in TDBRAIN are shared by all late-recorded patient groups, so they are not
+  depression-specific (technical or general patient feature: undecided; see the correction above).
 - Across four independent sources, no EEG feature or model parameter separates depressed from healthy people
   consistently.
 - Nothing measured from resting EEG predicts who responds to rTMS; only age and baseline severity do.
@@ -79,7 +83,7 @@ connectivity. This became **M5.3**, which beat M5.1 on its own metric (total 0.7
 | **Scored the models on plain, interpretable quantities** (spectrum, band maps, coherence) instead of the M5.1 feature space | **M5.1 and M5.3 predicted individual spectra and spatial coherence worse than the population average** (coherence 4–12× worse); the earlier "good fit" was a property of the old objective |
 | **New objective (M5.4):** a proper statistical likelihood of the whole cross-spectrum (complex-Wishart/Whittle), muscle-prone channels excluded above 20 Hz, non-identifiable parameters fixed or tied, Laplace posteriors | final form: BEM head model, 10 spatial modes, plus the empirical population spectrum as a background term. See §4 |
 | **rTMS response prediction** (pre-registered) | only clinical variables predict (AUC 0.67); EEG markers and model parameters do not (§4.5) |
-| **Specificity check** of the one "robust" group difference | it is an acquisition-batch artefact (§4.4) |
+| **Specificity check** of the one "robust" group difference | not depression-specific: equal in OCD, insomnia, ADHD (§4.4) |
 
 ### Phase D — latest (2026-09-26/27)
 - Figures of the fitted signals (spectra, scalp maps, coherence, EEG traces; added by another session).
@@ -91,7 +95,7 @@ connectivity. This became **M5.3**, which beat M5.1 on its own metric (total 0.7
 ## 4. What we now know
 
 ### 4.1 Data
-- **TDBRAIN has an acquisition-batch confound.** Nearly all Healthy volunteers were recorded in an early batch
+- **TDBRAIN confounds diagnosis with recording period.** Nearly all Healthy volunteers were recorded in an early batch
   (subject ID < 88000000), and every clinical group later. Features and parameters step at that boundary regardless
   of diagnosis (details in §4.4).
 - **Muscle activity** contaminates 20–40 Hz at lateral channels (Fp1/Fp2/F7/F8/T7/T8) in most recordings. The new
@@ -152,10 +156,11 @@ scored on the re-cleaned data. The whole-cross-spectrum deviance exists only for
 ### 4.4 The Healthy-vs-MDD signal
 - **In TDBRAIN, the only robust parameter difference is an artefact.** Lower left dorsal-attention input in MDD
   (−0.51 SD, Holm p = 0.001) appeared in every model version. It is equally present in late-batch OCD, insomnia and
-  ADHD patients, and absent in early-batch memory-complaint patients. Batch explains it (+0.42 SD, p = 0.001);
+  ADHD patients, and absent in early-batch memory-complaint patients. A recording-period term absorbs it (+0.42 SD, p = 0.001), but that term rests on the memory-complaint group, and late-recorded healthy volunteers do not show the effect (−0.09 SD);
   depression does not (−0.04, p = 0.63).
-- **At the data level, most TDBRAIN Healthy–MDD EEG differences are batch.** Alpha/beta topography and zero-lag
-  coherence reproduce the batch difference (r = 0.72–0.90). This was estimated without any depressed subject, and
+- **At the data level, most TDBRAIN Healthy–MDD EEG differences are shared with non-depressed patients.** Alpha/beta
+  topography and zero-lag coherence reproduce the difference between non-depressed late patients and early
+  healthy/SMC subjects (r = 0.72–0.90). This was estimated without any depressed subject, and
   none of it replicates in the external datasets.
 - **One difference is real but not depression-specific: lagged alpha coherency.**
   - It separates *patients* from healthy people in TDBRAIN within the same batch, and in two independent clinical MDD
@@ -196,7 +201,7 @@ which suggests they were recorded differently. Its large group differences shoul
 
 | # | Problem | Evidence | Status / fix |
 |---|---|---|---|
-| 1 | **No valid disease contrast in TDBRAIN** | batch step explains the group differences (§4.4) | use batch-matched comparisons or external data; needs **larger matched data** (EMBARC) |
+| 1 | **No valid disease contrast in TDBRAIN** | group differences are shared by all late-recorded patient groups (§4.4) | use batch-matched comparisons or external data; needs **larger matched data** (EMBARC) |
 | 2 | **Samples too small for the effects that exist** | external effects ≈ 0.2–0.3 SD; about 110 MDD pooled | EMBARC (≈ 300 MDD + controls, same sites) |
 | 3 | **Model lacks narrow rhythms other than alpha** (beta, frontal theta) and non-sinusoidal alpha | two beta experiments: posterior = prior; theta worse than average everywhere | new component: resonators with free peak width (damped oscillators or a corticothalamic loop) plus a waveform term |
 | 4 | **Heavy reliance on the population template** (62 % of power) | decomposition, ablation | shrinks only if (3) is solved |
@@ -216,8 +221,8 @@ which suggests they were recorded differently. Its large group differences shoul
 | The feature objective measured real fit | direct spectral scoring | ruled out: it hid 4–12× coherence errors |
 | Neural parameters don't matter under the likelihood | freeze-neural ablation | ruled out: they improve fit for 99.6 % of subjects |
 | TVB lead field is as good as BEM | likelihood comparison | ruled out: BEM better for 82 % |
-| Left dorsal-attention deficit is a depression marker | specificity (4 clinical groups) and early-batch SMC | ruled out: acquisition batch |
-| TDBRAIN Healthy–MDD EEG differences are depression effects | batch effect estimated without depressed subjects; external datasets | mostly ruled out: batch; lagged alpha is clinical but not depression-specific |
+| Left dorsal-attention deficit is a depression marker | specificity (4 clinical groups) and early-batch SMC | ruled out: not depression-specific (cause undecided) |
+| TDBRAIN Healthy–MDD EEG differences are depression effects | difference estimated without depressed subjects; external datasets | mostly ruled out: shared with other patients; lagged alpha is clinical but not depression-specific |
 | Freeing the beta generator fixes beta | refit and recovery | ruled out: posterior = prior |
 | A sensorimotor-specific beta generator fixes beta | refit and recovery | ruled out: no change on real data |
 | Model or EEG features predict rTMS response | pre-registered nested CV, permutation | ruled out at this sample size |

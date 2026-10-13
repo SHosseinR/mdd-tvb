@@ -109,19 +109,31 @@ def fig_dorsattn(extra=None):
                  ROOT / "outputs/m54_smc/results/ctrl_smc_bem_m10pop/subject_fits.csv"):
         if ctrl.is_file():
             frames.append(pd.read_csv(ctrl)[["group", p]])
-    x = pd.concat(frames)
-    order = [g for g in ["Healthy", "SMC", "MDD", "rTMS (external)", "ADHD", "OCD", "INSOMNIA", "TINNITUS"] if g in set(x.group)]
-    fig, ax = plt.subplots(figsize=(10, 4), constrained_layout=True)
+    x = pd.concat(frames).reset_index(drop=True)
+    ids = pd.concat([pd.read_csv(ROOT / "outputs/m54b_kaggle_bem/results/dev_bem_m10pop/subject_fits.csv")[["subject_id"]],
+                     pd.read_csv(ROOT / "outputs/m54b_kaggle_bem/results/ext_bem_m10pop/subject_fits.csv")[["subject_id"]]]
+                    + [pd.read_csv(c)[["subject_id"]] for c in (ROOT / "outputs/m54_ctrl/results/ctrl_bem_m10pop/subject_fits.csv",
+                                                                ROOT / "outputs/m54_smc/results/ctrl_smc_bem_m10pop/subject_fits.csv")
+                       if c.is_file()]).subject_id.reset_index(drop=True)
+    late = ids.str[4:].astype(float) >= 88000000
+    x.loc[(x.group == "Healthy") & late.to_numpy(), "group"] = "Healthy (late)"
+    x.loc[x.group == "Healthy", "group"] = "Healthy (early)"
+    order = [g for g in ["Healthy (early)", "SMC", "Healthy (late)", "MDD", "rTMS (external)", "ADHD", "OCD", "INSOMNIA",
+                         "TINNITUS"] if g in set(x.group)]
+    fig, ax = plt.subplots(figsize=(11, 4.2), constrained_layout=True)
     data = [x[x.group == g][p].to_numpy() for g in order]
     ax.boxplot(data, showfliers=False)
-    ax.set_xticks(range(1, len(order) + 1), [f"{g}\n(n={len(v)})" for g, v in zip(order, data)])
+    ax.set_xticks(range(1, len(order) + 1), [f"{g}\n(n={len(v)})" for g, v in zip(order, data)], fontsize=8.5)
     for i, v in enumerate(data, start=1):
         ax.scatter(np.random.default_rng(i).normal(i, 0.06, len(v)), v, s=5, alpha=0.4)
     ax.set_ylabel("left dorsal-attention input log-gain")
     ax.axvline(2.5, color="k", ls="--", lw=0.8)
-    ax.text(1.5, ax.get_ylim()[1], "early batch", ha="center", va="top", fontsize=8)
-    ax.text(5.0, ax.get_ylim()[1], "late batch (all clinical groups)", ha="center", va="top", fontsize=8)
-    ax.set_title("Left dorsal-attention input gain by cohort: it follows acquisition batch, not diagnosis")
+    ax.axvline(3.5, color="k", ls="--", lw=0.8)
+    ax.text(1.5, ax.get_ylim()[1], "early period", ha="center", va="top", fontsize=8)
+    ax.text(3.0, ax.get_ylim()[1], "late,\nhealthy", ha="center", va="top", fontsize=8)
+    ax.text(6.5, ax.get_ylim()[1], "late period, patient groups", ha="center", va="top", fontsize=8)
+    ax.set_title("Left dorsal-attention input gain: low in every late-recorded patient group, not specific to depression\n"
+                 "(late-recorded healthy volunteers are normal, so a purely technical cause is not established)", fontsize=10)
     fig.savefig(OUT / "dorsattn_left_by_group.png", dpi=160)
     plt.close(fig)
 
